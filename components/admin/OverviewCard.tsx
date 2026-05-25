@@ -23,7 +23,7 @@ export function OverviewCard({ label, value, delta, trend = "flat", hint }: Prop
         {delta && (
           <span
             className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
-            style={{ background: "var(--surface)", color: deltaColor }}
+            style={{ background: "var(--surface-muted)", color: deltaColor }}
           >
             {Arrow && <Arrow className="w-3 h-3" />}
             {delta}

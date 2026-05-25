@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { signOut } from "@/lib/auth";
 import {
   IconDashboard,
   IconProperties,
@@ -41,6 +42,12 @@ function isActive(pathname: string | null, href: string) {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  function handleLogout() {
+    signOut();
+    router.replace("/login");
+  }
 
   return (
     <aside
@@ -60,21 +67,7 @@ export function Sidebar() {
         <span className="text-white font-semibold tracking-tight">Chua Enterprise</span>
       </div>
 
-      <div className="flex items-center gap-3 px-2 py-2">
-        <div
-          className="w-10 h-10 rounded-full shrink-0"
-          style={{
-            background: "linear-gradient(135deg, #4a4f5b 0%, #2a2d34 100%)",
-            border: "2px solid rgba(255,255,255,0.08)",
-          }}
-        />
-        <div className="min-w-0">
-          <p className="text-[11px]" style={{ color: "var(--sidebar-text-muted)" }}>Welcome back,</p>
-          <p className="text-sm font-semibold text-white truncate">Admin User</p>
-        </div>
-      </div>
-
-      <nav className="flex flex-col gap-1 flex-1 overflow-y-auto">
+      <nav className="flex flex-col gap-1 flex-1 overflow-y-auto mt-2">
         {items.map((item) => {
           const Icon = item.icon;
           const active = isActive(pathname, item.href);
@@ -93,10 +86,34 @@ export function Sidebar() {
       </nav>
 
       <div className="pt-4 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-        <a href="#" className="ui-nav-item">
-          <IconLogout className="ui-nav-icon" />
-          <span>Log Out</span>
-        </a>
+        <div className="flex items-center gap-3 px-1.5 py-1">
+          <div
+            className="w-9 h-9 rounded-full shrink-0"
+            style={{
+              background: "linear-gradient(135deg, #4a4f5b 0%, #2a2d34 100%)",
+              border: "2px solid rgba(255,255,255,0.08)",
+            }}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white truncate leading-tight">Admin User</p>
+            <p
+              className="text-[11px] truncate leading-tight mt-0.5"
+              style={{ color: "var(--sidebar-text-muted)" }}
+            >
+              admin@chua.co
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            aria-label="Log out"
+            title="Log out"
+            className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition hover:bg-[var(--sidebar-muted)] hover:text-white"
+            style={{ color: "var(--sidebar-text-muted)" }}
+          >
+            <IconLogout className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </aside>
   );

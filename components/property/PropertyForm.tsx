@@ -19,9 +19,17 @@ const PROPERTY_TYPES: { value: PropertyType; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
-const RENTAL_MODELS: { value: RentalModel; label: string }[] = [
-  { value: "room_rental", label: "Room Rental" },
-  { value: "whole_unit", label: "Whole Unit" },
+const RENTAL_MODELS: { value: RentalModel; label: string; hint: string }[] = [
+  {
+    value: "room_rental",
+    label: "Room rental",
+    hint: "Multiple rooms; revenue is collected per room.",
+  },
+  {
+    value: "whole_unit",
+    label: "Whole unit",
+    hint: "One tenancy for the entire unit.",
+  },
 ];
 
 const STATUSES: { value: PropertyStatus; label: string }[] = [
@@ -52,10 +60,8 @@ function defaultValues(): PropertyFormValues {
   };
 }
 
-const labelClass = "text-xs font-medium uppercase tracking-wider";
-const labelStyle: React.CSSProperties = { color: "var(--text-muted)" };
 const inputClass =
-  "w-full px-3 py-2 text-sm rounded-lg border outline-none transition";
+  "w-full px-3 py-2 text-sm rounded-lg border outline-none transition focus:ring-2";
 const inputStyle: React.CSSProperties = {
   borderColor: "var(--border-soft)",
   background: "var(--surface)",
@@ -87,177 +93,220 @@ export function PropertyForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    onSubmit(values);
+    // Clamp rented_units to total_units to prevent invalid states.
+    const total = Math.max(0, values.total_units || 0);
+    const rented = Math.min(total, Math.max(0, values.rented_units || 0));
+    onSubmit({ ...values, total_units: total, rented_units: rented });
   }
 
+  const isWhole = values.rental_model === "whole_unit";
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Property name" htmlFor="name">
-          <input
-            id="name"
-            required
-            className={inputClass}
-            style={inputStyle}
-            value={values.name}
-            onChange={(e) => set("name", e.target.value)}
-          />
-        </Field>
-        <Field label="Short name" htmlFor="short_name">
-          <input
-            id="short_name"
-            className={inputClass}
-            style={inputStyle}
-            value={values.short_name}
-            onChange={(e) => set("short_name", e.target.value)}
-          />
-        </Field>
-        <Field label="Address" htmlFor="address" full>
-          <input
-            id="address"
-            className={inputClass}
-            style={inputStyle}
-            value={values.address}
-            onChange={(e) => set("address", e.target.value)}
-          />
-        </Field>
-        <Field label="City" htmlFor="city">
-          <input
-            id="city"
-            className={inputClass}
-            style={inputStyle}
-            value={values.city}
-            onChange={(e) => set("city", e.target.value)}
-          />
-        </Field>
-        <Field label="State" htmlFor="state">
-          <input
-            id="state"
-            className={inputClass}
-            style={inputStyle}
-            value={values.state}
-            onChange={(e) => set("state", e.target.value)}
-          />
-        </Field>
-        <Field label="Postcode" htmlFor="postcode">
-          <input
-            id="postcode"
-            className={inputClass}
-            style={inputStyle}
-            value={values.postcode}
-            onChange={(e) => set("postcode", e.target.value)}
-          />
-        </Field>
-        <Field label="Image URL" htmlFor="image_url">
-          <input
-            id="image_url"
-            className={inputClass}
-            style={inputStyle}
-            placeholder="https://…"
-            value={values.image_url ?? ""}
-            onChange={(e) => set("image_url", e.target.value)}
-          />
-        </Field>
-      </section>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-10">
+      {/* Rental model — pick visually, this is the most important choice */}
+      <Group eyebrow="Rental model" title="How is this property rented?">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {RENTAL_MODELS.map((m) => {
+            const active = values.rental_model === m.value;
+            return (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => {
+                  set("rental_model", m.value);
+                  if (m.value === "whole_unit") {
+                    set("total_units", 1);
+                    if ((values.rented_units || 0) > 1) set("rented_units", 1);
+                  }
+                }}
+                className="text-left p-4 rounded-xl transition"
+                style={{
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: active ? "var(--accent)" : "var(--border-soft)",
+                  background: active ? "var(--accent-soft)" : "var(--surface)",
+                  boxShadow: active ? "0 0 0 3px var(--accent-ring)" : "none",
+                }}
+              >
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {m.label}
+                </p>
+                <p
+                  className="text-xs mt-1 leading-relaxed"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {m.hint}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </Group>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Field label="Rental model" htmlFor="rental_model">
-          <select
-            id="rental_model"
-            className="ui-select"
-            value={values.rental_model}
-            onChange={(e) => set("rental_model", e.target.value as RentalModel)}
-          >
-            {RENTAL_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Property type" htmlFor="property_type">
-          <select
-            id="property_type"
-            className="ui-select"
-            value={values.property_type}
-            onChange={(e) => set("property_type", e.target.value as PropertyType)}
-          >
-            {PROPERTY_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>{t.label}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Status" htmlFor="status">
-          <select
-            id="status"
-            className="ui-select"
-            value={values.status}
-            onChange={(e) => set("status", e.target.value as PropertyStatus)}
-          >
-            {STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-        </Field>
-      </section>
+      {/* Identity */}
+      <Group eyebrow="Identity" title="Name and description">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Property name" required>
+            <input
+              required
+              className={inputClass}
+              style={inputStyle}
+              value={values.name}
+              onChange={(e) => set("name", e.target.value)}
+            />
+          </Field>
+          <Field label="Short name">
+            <input
+              className={inputClass}
+              style={inputStyle}
+              placeholder="Display alias, e.g. ‘Menjalara’"
+              value={values.short_name}
+              onChange={(e) => set("short_name", e.target.value)}
+            />
+          </Field>
+          <Field label="Description" full>
+            <textarea
+              rows={3}
+              className={inputClass}
+              style={inputStyle}
+              value={values.description ?? ""}
+              onChange={(e) => set("description", e.target.value)}
+            />
+          </Field>
+        </div>
+      </Group>
 
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Field label="Total units" htmlFor="total_units">
-          <input
-            id="total_units"
-            type="number"
-            min={1}
-            className={inputClass}
-            style={inputStyle}
-            value={values.total_units}
-            onChange={(e) => set("total_units", Number(e.target.value) || 0)}
-          />
-        </Field>
-        <Field label="Rented units" htmlFor="rented_units">
-          <input
-            id="rented_units"
-            type="number"
-            min={0}
-            className={inputClass}
-            style={inputStyle}
-            value={values.rented_units}
-            onChange={(e) => set("rented_units", Number(e.target.value) || 0)}
-          />
-        </Field>
-        <Field label="YTD revenue" htmlFor="ytd_revenue">
-          <input
-            id="ytd_revenue"
-            type="number"
-            min={0}
-            className={inputClass}
-            style={inputStyle}
-            value={values.ytd_revenue ?? 0}
-            onChange={(e) => set("ytd_revenue", Number(e.target.value) || 0)}
-          />
-        </Field>
-        <Field label="YTD expenses" htmlFor="ytd_expenses">
-          <input
-            id="ytd_expenses"
-            type="number"
-            min={0}
-            className={inputClass}
-            style={inputStyle}
-            value={values.ytd_expenses ?? 0}
-            onChange={(e) => set("ytd_expenses", Number(e.target.value) || 0)}
-          />
-        </Field>
-      </section>
+      {/* Location */}
+      <Group eyebrow="Location" title="Where is it?">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Address" full>
+            <input
+              className={inputClass}
+              style={inputStyle}
+              value={values.address}
+              onChange={(e) => set("address", e.target.value)}
+            />
+          </Field>
+          <Field label="City">
+            <input
+              className={inputClass}
+              style={inputStyle}
+              value={values.city}
+              onChange={(e) => set("city", e.target.value)}
+            />
+          </Field>
+          <Field label="State">
+            <input
+              className={inputClass}
+              style={inputStyle}
+              value={values.state}
+              onChange={(e) => set("state", e.target.value)}
+            />
+          </Field>
+          <Field label="Postcode">
+            <input
+              className={inputClass}
+              style={inputStyle}
+              value={values.postcode}
+              onChange={(e) => set("postcode", e.target.value)}
+            />
+          </Field>
+          <Field label="Image URL" full>
+            <input
+              className={inputClass}
+              style={inputStyle}
+              placeholder="https://…"
+              value={values.image_url ?? ""}
+              onChange={(e) => set("image_url", e.target.value)}
+            />
+          </Field>
+        </div>
+      </Group>
 
-      <Field label="Description" htmlFor="description" full>
-        <textarea
-          id="description"
-          rows={3}
-          className={inputClass}
-          style={inputStyle}
-          value={values.description ?? ""}
-          onChange={(e) => set("description", e.target.value)}
-        />
-      </Field>
+      {/* Classification */}
+      <Group eyebrow="Classification" title="Type and status">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Property type">
+            <select
+              className="ui-select"
+              value={values.property_type}
+              onChange={(e) => set("property_type", e.target.value as PropertyType)}
+            >
+              {PROPERTY_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select
+              className="ui-select"
+              value={values.status}
+              onChange={(e) => set("status", e.target.value as PropertyStatus)}
+            >
+              {STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </Group>
 
-      <div className="flex gap-2 justify-end pt-2">
+      {/* Capacity */}
+      <Group
+        eyebrow="Capacity"
+        title={isWhole ? "Whole-unit tenancy" : "Rooms and occupancy"}
+        hint={
+          isWhole
+            ? "Whole-unit properties always have one rentable unit."
+            : "Total rooms is the number of rentable rooms in this property."
+        }
+      >
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Field label={isWhole ? "Total units" : "Total rooms"}>
+            <input
+              type="number"
+              min={1}
+              disabled={isWhole}
+              className={inputClass}
+              style={{
+                ...inputStyle,
+                opacity: isWhole ? 0.6 : 1,
+              }}
+              value={values.total_units}
+              onChange={(e) => set("total_units", Number(e.target.value) || 0)}
+            />
+          </Field>
+          <Field label={isWhole ? "Rented" : "Rented rooms"}>
+            <input
+              type="number"
+              min={0}
+              max={values.total_units}
+              className={inputClass}
+              style={inputStyle}
+              value={values.rented_units}
+              onChange={(e) => set("rented_units", Number(e.target.value) || 0)}
+            />
+          </Field>
+        </div>
+      </Group>
+
+      {/* Footnote about financial truth */}
+      <p
+        className="text-[11px] leading-relaxed -mt-4"
+        style={{ color: "var(--text-faint)" }}
+      >
+        Revenue is recorded against rooms or whole units; expenses are recorded against the property.
+        Year-to-date totals shown on the property page are calculated from saved entries.
+      </p>
+
+      {/* Actions — sticky-feeling footer */}
+      <div
+        className="flex gap-2 justify-end pt-5"
+        style={{ borderTop: "1px solid var(--border-soft)" }}
+      >
         {onCancel ? (
           <button type="button" className="ui-btn" onClick={onCancel}>
             Cancel
@@ -271,20 +320,63 @@ export function PropertyForm({
   );
 }
 
+function Group({
+  eyebrow,
+  title,
+  hint,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-x-8 gap-y-4">
+      <div>
+        <p
+          className="text-[11px] uppercase tracking-[0.16em]"
+          style={{ color: "var(--text-faint)" }}
+        >
+          {eyebrow}
+        </p>
+        <h3
+          className="text-sm font-semibold mt-1"
+          style={{ color: "var(--text-primary)" }}
+        >
+          {title}
+        </h3>
+        {hint ? (
+          <p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            {hint}
+          </p>
+        ) : null}
+      </div>
+      <div>{children}</div>
+    </section>
+  );
+}
+
 function Field({
   label,
-  htmlFor,
+  required,
   full,
   children,
 }: {
   label: string;
-  htmlFor?: string;
+  required?: boolean;
   full?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <label htmlFor={htmlFor} className={"flex flex-col gap-1.5 " + (full ? "md:col-span-2" : "")}>
-      <span className={labelClass} style={labelStyle}>{label}</span>
+    <label className={"flex flex-col gap-1.5 " + (full ? "md:col-span-2" : "")}>
+      <span
+        className="text-[11px] font-medium uppercase tracking-[0.12em]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {label}
+        {required ? <span style={{ color: "var(--accent)" }}> *</span> : null}
+      </span>
       {children}
     </label>
   );

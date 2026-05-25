@@ -48,6 +48,45 @@
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
+/* Dark theme — applied via data-theme="dark" on <html> */
+html[data-theme="dark"] {
+  --background: #0e1014;
+  --foreground: #e8eaef;
+
+  --surface: #161920;
+  --surface-muted: #1c1f27;
+  --surface-subtle: #232730;
+
+  --sidebar: #0a0c10;
+  --sidebar-muted: #161920;
+  --sidebar-text: #d5d7de;
+  --sidebar-text-muted: #7e8492;
+
+  --border: #2a2f3a;
+  --border-soft: #232730;
+  --border-strong: #353b48;
+
+  --text-primary: #e8eaef;
+  --text-secondary: #b3b8c4;
+  --text-muted: #8b909d;
+  --text-faint: #5f6573;
+
+  --accent: #7c7ef5;
+  --accent-soft: rgba(124, 126, 245, 0.14);
+  --accent-ring: rgba(124, 126, 245, 0.28);
+
+  --success: #4fb98a;
+  --warning: #e8b357;
+  --danger: #e07070;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+html { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -78,13 +117,14 @@ body {
   }
 
   .ui-kpi {
-    background: var(--surface-muted);
+    background: var(--surface);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-lg);
     padding: 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    box-shadow: var(--shadow-xs);
   }
 
   .ui-input {

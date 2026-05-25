@@ -1,5 +1,6 @@
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { Chatbot } from "./Chatbot";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,6 +16,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <Header />
         <main className="flex-1 min-w-0">{children}</main>
       </div>
+      <Chatbot />
     </div>
   );
 }

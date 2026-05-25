@@ -1,4 +1,6 @@
 import { OverviewCard } from "@/components/admin/OverviewCard";
+import { YearlyChart } from "@/components/admin/YearlyChart";
+import { RecentPayments } from "@/components/admin/RecentPayments";
 
 const kpis = [
   { label: "Total Revenue", value: "$248,540", delta: "+12.4%", trend: "up" as const, hint: "vs last quarter" },
@@ -6,9 +8,6 @@ const kpis = [
   { label: "Net Profit", value: "$172,330", delta: "+18.7%", trend: "up" as const, hint: "vs last quarter" },
   { label: "Occupancy", value: "92%", delta: "+3.0%", trend: "up" as const, hint: "23 of 25 units" },
 ];
-
-const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const barHeights = [42, 56, 38, 64, 72, 58, 80, 76, 68, 84, 90, 70];
 
 const activity = [
   { who: "Maria Hulama", what: "Rent payment received", when: "2 min ago", amount: "+$1,840", status: "success" as const },
@@ -24,13 +23,6 @@ const properties = [
   { name: "Harbor View Lofts", units: "5 units", occ: "80%", revenue: "$22,950" },
 ];
 
-const payments = [
-  { name: "Steven Summer", when: "02 min ago", amount: "+$1,520" },
-  { name: "Jordan Maizee", when: "12 min ago", amount: "+$830" },
-  { name: "Jessica Alba", when: "1 hr ago", amount: "+$2,160" },
-  { name: "Anna Armas", when: "Today", amount: "+$1,150" },
-];
-
 export default function AdminOverviewPage() {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 p-6 lg:p-8">
@@ -43,41 +35,8 @@ export default function AdminOverviewPage() {
           ))}
         </section>
 
-        {/* Yearly Overview chart placeholder */}
-        <section className="ui-card p-6">
-          <div className="flex items-start justify-between mb-6">
-            <div>
-              <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-                Yearly Overview
-              </h2>
-              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                Revenue across the last 12 months
-              </p>
-            </div>
-            <div className="flex gap-2 text-xs">
-              <span className="ui-chip">Revenue</span>
-              <span className="ui-chip" style={{ background: "var(--surface-subtle)" }}>Expenses</span>
-            </div>
-          </div>
-          <div className="flex items-end gap-3 h-56">
-            {barHeights.map((h, i) => (
-              <div key={months[i]} className="flex-1 flex flex-col items-center gap-2">
-                <div className="w-full flex items-end justify-center" style={{ height: "100%" }}>
-                  <div
-                    className="w-full rounded-t-md"
-                    style={{
-                      height: `${h}%`,
-                      background: i === 10
-                        ? "linear-gradient(180deg, var(--accent) 0%, #4b4dd3 100%)"
-                        : "linear-gradient(180deg, #2b2e36 0%, #1a1c22 100%)",
-                    }}
-                  />
-                </div>
-                <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>{months[i]}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Yearly Overview chart */}
+        <YearlyChart />
 
         {/* Recent Activity + Property Summary */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -195,28 +154,8 @@ export default function AdminOverviewPage() {
           </ul>
         </div>
 
-        {/* Recent Payments */}
-        <div className="ui-card p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Recent Payments</h3>
-            <button className="text-xs font-medium" style={{ color: "var(--accent)" }}>See all</button>
-          </div>
-          <ul className="flex flex-col gap-4">
-            {payments.map((p, i) => (
-              <li key={i} className="flex items-center gap-3">
-                <div
-                  className="w-9 h-9 rounded-full shrink-0"
-                  style={{ background: "linear-gradient(135deg,#dcd6c7,#b6ad99)" }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{p.name}</p>
-                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>{p.when}</p>
-                </div>
-                <span className="text-sm font-semibold" style={{ color: "var(--success)" }}>{p.amount}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* Recent Payments — live feed */}
+        <RecentPayments />
       </aside>
     </div>
   );

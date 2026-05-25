@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { useRental } from "@/context/RentalContext";
 import { IconSearch } from "@/components/admin/icons";
-import type { PropertyFilters } from "@/types/rental";
+import { STATUS_LABEL, type PropertyFilters } from "@/types/rental";
 
 const initialFilters: PropertyFilters = {
   search: "",
@@ -33,34 +33,50 @@ export default function PropertiesPage() {
     });
   }, [properties, filters]);
 
+  const roomCount = properties.filter((p) => p.rental_model === "room_rental").length;
+  const wholeCount = properties.filter((p) => p.rental_model === "whole_unit").length;
+
   return (
-    <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-6">
-      {/* Page header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-8">
+      {/* Header */}
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-            All Properties
+          <p
+            className="text-[11px] uppercase tracking-[0.16em]"
+            style={{ color: "var(--text-faint)" }}
+          >
+            Portfolio
+          </p>
+          <h2
+            className="text-2xl font-semibold mt-1 tracking-tight"
+            style={{ color: "var(--text-primary)" }}
+          >
+            Properties
           </h2>
-          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-            {filtered.length} of {properties.length} properties
+          <p className="text-sm mt-1.5" style={{ color: "var(--text-muted)" }}>
+            {properties.length} active
+            <span style={{ color: "var(--text-faint)" }}> · </span>
+            {roomCount} room rental
+            <span style={{ color: "var(--text-faint)" }}> · </span>
+            {wholeCount} whole unit
           </p>
         </div>
         <Link href="/admin/properties/new" className="ui-btn ui-btn-primary">
           <span className="text-base leading-none">+</span>
           <span>Add Property</span>
         </Link>
-      </div>
+      </header>
 
-      {/* Filters */}
-      <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[220px]">
+      {/* Filters — ghost strip, no boxed card to keep the page calm */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[240px] max-w-md">
           <IconSearch
             className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
             style={{ color: "var(--text-faint)" } as React.CSSProperties}
           />
           <input
             className="ui-input"
-            placeholder="Search property name, address, city…"
+            placeholder="Search by name, address, city…"
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
           />
@@ -72,9 +88,9 @@ export default function PropertiesPage() {
             setFilters((f) => ({ ...f, rental_model: e.target.value as PropertyFilters["rental_model"] }))
           }
         >
-          <option value="all">All Models</option>
-          <option value="room_rental">Room Rental</option>
-          <option value="whole_unit">Whole Unit</option>
+          <option value="all">All models</option>
+          <option value="room_rental">Room rental</option>
+          <option value="whole_unit">Whole unit</option>
         </select>
         <select
           className="ui-select w-auto min-w-[160px]"
@@ -83,11 +99,20 @@ export default function PropertiesPage() {
             setFilters((f) => ({ ...f, status: e.target.value as PropertyFilters["status"] }))
           }
         >
-          <option value="all">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="under_service">Under Service</option>
+          <option value="all">All statuses</option>
+          {(["active", "inactive", "under_service"] as const).map((s) => (
+            <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+          ))}
         </select>
+        {(filters.search || filters.rental_model !== "all" || filters.status !== "all") && (
+          <button
+            type="button"
+            className="ui-btn"
+            onClick={() => setFilters(initialFilters)}
+          >
+            Reset
+          </button>
+        )}
       </div>
 
       {/* Grid */}
