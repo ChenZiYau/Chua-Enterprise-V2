@@ -17,16 +17,51 @@ const inputStyle: React.CSSProperties = {
   color: "var(--text-primary)",
 };
 
+const MONTHS = [
+  { value: "january", label: "January" },
+  { value: "february", label: "February" },
+  { value: "march", label: "March" },
+  { value: "april", label: "April" },
+  { value: "may", label: "May" },
+  { value: "june", label: "June" },
+  { value: "july", label: "July" },
+  { value: "august", label: "August" },
+  { value: "september", label: "September" },
+  { value: "october", label: "October" },
+  { value: "november", label: "November" },
+  { value: "december", label: "December" },
+];
+
+function titleFromParam(value: string | null, fallback: string) {
+  if (!value) return fallback;
+  return value
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function dateFromPeriod(month: string | null, year: string | null) {
+  const monthIndex = MONTHS.findIndex((item) => item.value === month);
+  if (monthIndex < 0 || !year) return new Date().toISOString().slice(0, 10);
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
+}
+
 export function EntryForm({ kind }: { kind: EntryKind }) {
   const router = useRouter();
   const params = useSearchParams();
   const { visibleProperties } = useRental();
   const initialPropertyId = params.get("property") ?? visibleProperties[0]?.id ?? "";
+  const initialMonth = params.get("month") ?? "may";
+  const initialYear = params.get("year") ?? "2026";
 
   const [propertyId, setPropertyId] = useState(initialPropertyId);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => dateFromPeriod(params.get("month"), params.get("year")));
   const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState(kind === "revenue" ? "rent" : "maintenance");
+  const [unit, setUnit] = useState(() => titleFromParam(params.get("unit"), ""));
+  const [month, setMonth] = useState(initialMonth);
+  const [year, setYear] = useState(initialYear);
+  const [category, setCategory] = useState(() =>
+    titleFromParam(params.get("category"), kind === "revenue" ? "Rent" : "Maintenance")
+  );
   const [note, setNote] = useState("");
   const [saved, setSaved] = useState(false);
 
@@ -76,6 +111,19 @@ export function EntryForm({ kind }: { kind: EntryKind }) {
           </select>
         </label>
 
+        {kind === "revenue" ? (
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass} style={labelStyle}>Unit / Room</span>
+            <input
+              className={inputClass}
+              style={inputStyle}
+              placeholder="Room A or Whole Unit"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+            />
+          </label>
+        ) : null}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="flex flex-col gap-1.5">
             <span className={labelClass} style={labelStyle}>Date</span>
@@ -100,6 +148,33 @@ export function EntryForm({ kind }: { kind: EntryKind }) {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass} style={labelStyle}>Month</span>
+            <select
+              className="ui-select"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+            >
+              {MONTHS.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass} style={labelStyle}>Year</span>
+            <select
+              className="ui-select"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+            >
+              {["2026", "2025", "2024"].map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
           </label>
         </div>
 
