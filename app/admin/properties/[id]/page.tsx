@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import { useRental } from "@/context/RentalContext";
 import { RENTAL_MODEL_LABEL, STATUS_LABEL, type Property } from "@/types/rental";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
-import { EntryDrawer } from "@/components/property/EntryDrawer";
+import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
 import { RoomCalendarDrawer } from "@/components/property/RoomCalendarDrawer";
+import { PropertyEditDrawer } from "@/components/property/PropertyEditDrawer";
+import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
 
 function formatMYR(value: number | undefined) {
   if (value === undefined || value === null) return "—";
@@ -27,7 +29,7 @@ function statusChipClass(status: Property["status"]) {
 type CalendarState = { open: false } | { open: true; unitId: string; roomLabel: string };
 type DrawerState =
   | { open: false }
-  | { open: true; tab: "revenue" | "expense"; unitId: string; unitName: string; month?: number; year?: number };
+  | { open: true; unitId: string; month?: number; year?: number };
 
 export default function PropertyDetailPage({
   params,
@@ -36,13 +38,15 @@ export default function PropertyDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const { getProperty, softDeleteProperty, getUnitsForProperty, getPropertyYTD } = useRental();
+  const { getProperty, updateProperty, softDeleteProperty, getUnitsForProperty, getPropertyYTD } = useRental();
 
   const property = getProperty(id);
   const units = getUnitsForProperty(id);
   const [imgSrc, setImgSrc] = useState(property?.image_url || PROPERTY_FALLBACK_IMAGE);
   const [calendar, setCalendar] = useState<CalendarState>({ open: false });
   const [drawer, setDrawer] = useState<DrawerState>({ open: false });
+  const [editOpen, setEditOpen] = useState(false);
+  const [expenseOpen, setExpenseOpen] = useState(false);
 
   if (!property) {
     return (
@@ -110,7 +114,8 @@ export default function PropertyDetailPage({
               </p>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
-              <Link href={`/admin/properties/${property.id}/edit`} className="ui-btn">Edit</Link>
+              <button type="button" className="ui-btn ui-btn-primary" onClick={() => setExpenseOpen(true)}>+ Add Expense</button>
+              <button type="button" className="ui-btn" onClick={() => setEditOpen(true)}>Edit</button>
               <button type="button" className="ui-btn" onClick={handleDelete}>Move to Trash</button>
             </div>
           </div>
@@ -146,7 +151,7 @@ export default function PropertyDetailPage({
                 className="ui-btn ui-btn-primary"
                 onClick={() => {
                   const first = units[0];
-                  setDrawer({ open: true, tab: "revenue", unitId: first.id, unitName: first.name });
+                  setDrawer({ open: true, unitId: first.id });
                 }}
               >
                 + Add Entry
@@ -210,23 +215,40 @@ export default function PropertyDetailPage({
         unitId={calendar.open ? calendar.unitId : ""}
         onLogMonth={(monthIdx, year) => {
           if (!calendar.open) return;
-          const { unitId, roomLabel } = calendar;
+          const { unitId } = calendar;
           setCalendar({ open: false });
-          setDrawer({ open: true, tab: "revenue", unitId, unitName: roomLabel, month: monthIdx, year });
+          setDrawer({ open: true, unitId, month: monthIdx, year });
         }}
       />
 
-      {/* Entry drawer — revenue + expense form */}
-      <EntryDrawer
+      {/* Revenue drawer — same form used on the Revenue ledger */}
+      <RevenueEntryDrawer
         open={drawer.open}
         onClose={() => setDrawer({ open: false })}
-        propertyName={property.name}
         propertyId={property.id}
-        unitId={drawer.open ? drawer.unitId : ""}
-        unitName={drawer.open ? drawer.unitName : ""}
-        initialTab={drawer.open ? drawer.tab : "revenue"}
+        lockProperty
+        unitId={drawer.open ? drawer.unitId : undefined}
         preselectedMonth={drawer.open ? drawer.month : undefined}
         preselectedYear={drawer.open ? drawer.year : undefined}
+      />
+
+      {/* Edit drawer — slides in from the right with the property form */}
+      <PropertyEditDrawer
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        property={property}
+        onSave={(values) => {
+          updateProperty(property.id, values);
+          setEditOpen(false);
+        }}
+      />
+
+      {/* Expense drawer — itemized, multi-line expense entry */}
+      <ExpenseEntryDrawer
+        open={expenseOpen}
+        onClose={() => setExpenseOpen(false)}
+        propertyName={property.name}
+        propertyId={property.id}
       />
     </div>
   );

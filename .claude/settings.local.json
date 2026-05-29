@@ -5,7 +5,8 @@
       "WebFetch(domain:www.pexels.com)",
       "Bash(npx tsc *)",
       "Bash(npm run *)",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Bash(npx next *)"
     ]
   }
 }

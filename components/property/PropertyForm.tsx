@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   Property,
   PropertyStatus,
@@ -73,16 +73,35 @@ export function PropertyForm({
   submitLabel,
   onSubmit,
   onCancel,
+  id,
+  hideFooter,
+  onDirtyChange,
 }: {
   initial?: Partial<PropertyFormValues>;
   submitLabel: string;
   onSubmit: (values: PropertyFormValues) => void;
   onCancel?: () => void;
+  /** Give the underlying <form> an id so external buttons can submit it via `form={id}`. */
+  id?: string;
+  /** Hide the built-in Cancel/Submit footer (when a parent provides its own actions). */
+  hideFooter?: boolean;
+  /** Report whether the form has unsaved changes relative to its initial values. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [values, setValues] = useState<PropertyFormValues>({
     ...defaultValues(),
     ...initial,
   });
+
+  // Snapshot of the initial values used to detect unsaved changes.
+  const [initialSnapshot] = useState(() =>
+    JSON.stringify({ ...defaultValues(), ...initial })
+  );
+
+  useEffect(() => {
+    if (!onDirtyChange) return;
+    onDirtyChange(JSON.stringify(values) !== initialSnapshot);
+  }, [values, initialSnapshot, onDirtyChange]);
 
   function set<K extends keyof PropertyFormValues>(
     key: K,
@@ -102,10 +121,10 @@ export function PropertyForm({
   const isWhole = values.rental_model === "whole_unit";
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-10">
+    <form id={id} onSubmit={handleSubmit} className="@container flex flex-col gap-10 @lg:gap-12">
       {/* Rental model — pick visually, this is the most important choice */}
       <Group eyebrow="Rental model" title="How is this property rented?">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 @md:grid-cols-2 gap-3">
           {RENTAL_MODELS.map((m) => {
             const active = values.rental_model === m.value;
             return (
@@ -148,7 +167,7 @@ export function PropertyForm({
 
       {/* Identity */}
       <Group eyebrow="Identity" title="Name and description">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 @lg:grid-cols-2 gap-4 @lg:gap-5">
           <Field label="Property name" required>
             <input
               required
@@ -181,7 +200,7 @@ export function PropertyForm({
 
       {/* Location */}
       <Group eyebrow="Location" title="Where is it?">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 @lg:grid-cols-2 gap-4 @lg:gap-5">
           <Field label="Address" full>
             <input
               className={inputClass}
@@ -228,7 +247,7 @@ export function PropertyForm({
 
       {/* Classification */}
       <Group eyebrow="Classification" title="Type and status">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 @lg:grid-cols-2 gap-4 @lg:gap-5">
           <Field label="Property type">
             <select
               className="ui-select"
@@ -264,7 +283,7 @@ export function PropertyForm({
             : "Total rooms is the number of rentable rooms in this property."
         }
       >
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 @xs:grid-cols-2 @xl:grid-cols-4 gap-4 @lg:gap-5">
           <Field label={isWhole ? "Total units" : "Total rooms"}>
             <input
               type="number"
@@ -303,19 +322,21 @@ export function PropertyForm({
       </p>
 
       {/* Actions — sticky-feeling footer */}
-      <div
-        className="flex gap-2 justify-end pt-5"
-        style={{ borderTop: "1px solid var(--border-soft)" }}
-      >
-        {onCancel ? (
-          <button type="button" className="ui-btn" onClick={onCancel}>
-            Cancel
+      {!hideFooter && (
+        <div
+          className="flex gap-2 justify-end pt-5"
+          style={{ borderTop: "1px solid var(--border-soft)" }}
+        >
+          {onCancel ? (
+            <button type="button" className="ui-btn" onClick={onCancel}>
+              Cancel
+            </button>
+          ) : null}
+          <button type="submit" className="ui-btn ui-btn-primary">
+            {submitLabel}
           </button>
-        ) : null}
-        <button type="submit" className="ui-btn ui-btn-primary">
-          {submitLabel}
-        </button>
-      </div>
+        </div>
+      )}
     </form>
   );
 }
@@ -332,7 +353,7 @@ function Group({
   children: React.ReactNode;
 }) {
   return (
-    <section className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-x-8 gap-y-4">
+    <section className="grid grid-cols-1 @2xl:grid-cols-[200px_1fr] gap-x-10 gap-y-5">
       <div>
         <p
           className="text-[11px] uppercase tracking-[0.16em]"
@@ -369,7 +390,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className={"flex flex-col gap-1.5 " + (full ? "md:col-span-2" : "")}>
+    <label className={"flex flex-col gap-1.5 " + (full ? "@lg:col-span-2" : "")}>
       <span
         className="text-[11px] font-medium uppercase tracking-[0.12em]"
         style={{ color: "var(--text-muted)" }}

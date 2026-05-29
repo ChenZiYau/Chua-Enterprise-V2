@@ -1,0 +1,410 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRental } from "@/context/RentalContext";
+import {
+  MONTHS_FULL,
+  EXPENSE_CATEGORIES,
+  EXPENSE_CATEGORY_LABEL,
+  type ExpenseCategory,
+} from "@/types/rental";
+
+type View = "normal" | "expanded" | "minimized";
+
+type Item = {
+  key: string;
+  category: ExpenseCategory;
+  description: string;
+  amount: string;
+};
+
+let _seq = 0;
+function newItem(): Item {
+  _seq += 1;
+  return { key: `item-${_seq}`, category: "maintenance", description: "", amount: "" };
+}
+
+function fmt(v: number) {
+  return new Intl.NumberFormat("en-MY", {
+    style: "currency",
+    currency: "MYR",
+    minimumFractionDigits: 2,
+  }).format(v);
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function ExpenseEntryDrawer({
+  open,
+  onClose,
+  propertyName,
+  propertyId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Optional — when omitted the drawer shows a property picker (e.g. from the Expenses ledger). */
+  propertyName?: string;
+  propertyId?: string;
+}) {
+  const { addExpenseEntry, getPropertyYTD, visibleProperties } = useRental();
+  const now = new Date();
+
+  const [view, setView] = useState<View>("normal");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
+
+  // When a propertyId is provided it is locked; otherwise the user picks one.
+  const lockProperty = !!propertyId;
+  const [selectedProperty, setSelectedProperty] = useState(propertyId ?? "");
+
+  const [year, setYear] = useState(now.getFullYear());
+  const [monthIdx, setMonthIdx] = useState(now.getMonth());
+  const [items, setItems] = useState<Item[]>([newItem()]);
+
+  const activePropertyId = lockProperty ? propertyId! : selectedProperty;
+  const activePropertyName =
+    propertyName ??
+    visibleProperties.find((p) => p.id === activePropertyId)?.name ??
+    "Add expenses";
+
+  // Reset every time the drawer opens.
+  useEffect(() => {
+    if (open) {
+      setView("normal");
+      setConfirmOpen(false);
+      setSavedCount(0);
+      setSelectedProperty(propertyId ?? "");
+      setYear(now.getFullYear());
+      setMonthIdx(now.getMonth());
+      setItems([newItem()]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, propertyId]);
+
+  // An entry is "dirty" if any row has a description or amount typed in.
+  const dirty = useMemo(
+    () => items.some((it) => it.description.trim() !== "" || it.amount.trim() !== ""),
+    [items]
+  );
+
+  const validItems = items.filter((it) => (parseFloat(it.amount) || 0) > 0);
+  const total = validItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+  const canSave = validItems.length > 0 && !!activePropertyId;
+
+  const attemptClose = useCallback(() => {
+    if (dirty) setConfirmOpen(true);
+    else onClose();
+  }, [dirty, onClose]);
+
+  // Lock scroll while open and not minimized.
+  useEffect(() => {
+    if (!open || view === "minimized") return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open, view]);
+
+  // Escape: close confirm first, then the drawer.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (confirmOpen) setConfirmOpen(false);
+      else if (view !== "minimized") attemptClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, confirmOpen, view, attemptClose]);
+
+  function updateItem(key: string, patch: Partial<Item>) {
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
+  }
+  function addRow() {
+    setItems((prev) => [...prev, newItem()]);
+  }
+  function removeRow(key: string) {
+    setItems((prev) => (prev.length === 1 ? [newItem()] : prev.filter((it) => it.key !== key)));
+  }
+
+  function handleSave() {
+    if (!canSave) return;
+    const month = monthIdx + 1;
+    const date = todayISO();
+    validItems.forEach((it) => {
+      const desc = it.description.trim() || null;
+      addExpenseEntry({
+        property_id: activePropertyId,
+        year,
+        month,
+        expense_date: date,
+        category: it.category,
+        custom_category: it.category === "other" ? desc : null,
+        amount: parseFloat(it.amount) || 0,
+        description: desc,
+        is_recurring: false,
+        is_irregular: false,
+      });
+    });
+    setSavedCount(validItems.length);
+    setTimeout(() => onClose(), 700);
+  }
+
+  if (!open) return null;
+
+  // ── Minimized floating bar ──
+  if (view === "minimized") {
+    return (
+      <div
+        className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl px-4 py-3"
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border-soft)",
+          boxShadow: "0 8px 32px rgba(15,17,22,0.16)",
+          animation: "exSlideUp 200ms cubic-bezier(.2,.7,.2,1)",
+          maxWidth: "min(92vw, 340px)",
+        }}
+      >
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
+            Adding expenses{dirty ? " · unsaved" : ""}
+          </p>
+          <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+            {activePropertyName}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button type="button" onClick={() => setView("normal")} className="ui-btn" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}>
+            Restore
+          </button>
+          <button type="button" onClick={attemptClose} aria-label="Close" className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: "var(--text-muted)", border: "1px solid var(--border-soft)" }}>
+            <CloseIcon />
+          </button>
+        </div>
+        {confirmOpen && (
+          <ConfirmDialog canSave={canSave} onSave={handleSave} onDiscard={() => { setConfirmOpen(false); onClose(); }} onCancel={() => setConfirmOpen(false)} />
+        )}
+        <Keyframes />
+      </div>
+    );
+  }
+
+  const widthClass = view === "expanded" ? "max-w-2xl" : "max-w-md";
+  const ytd = activePropertyId ? getPropertyYTD(activePropertyId, year) : { revenue: 0, expenses: 0, net: 0 };
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      <button type="button" aria-label="Close" onClick={attemptClose} className="absolute inset-0"
+        style={{ background: "rgba(15,17,22,0.40)", animation: "exFadeIn 140ms ease" }} />
+
+      <aside role="dialog" aria-modal="true" aria-labelledby="expense-drawer-title"
+        className={`relative ml-auto h-full w-full ${widthClass} flex flex-col @container`}
+        style={{ background: "var(--surface)", borderLeft: "1px solid var(--border-soft)", boxShadow: "-8px 0 32px rgba(15,17,22,0.10)", animation: "exSlideIn 220ms cubic-bezier(.2,.7,.2,1)" }}
+      >
+        {/* Header */}
+        <header className="px-6 py-5 flex items-start justify-between gap-4" style={{ borderBottom: "1px solid var(--border-soft)" }}>
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
+              Add expenses{dirty ? " · unsaved" : ""}
+            </p>
+            <h2 id="expense-drawer-title" className="text-lg font-semibold mt-1 truncate" style={{ color: "var(--text-primary)" }}>
+              {activePropertyName}
+            </h2>
+            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+              List everything you paid for this month — one line each.
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <IconBtn label="Minimize" onClick={() => setView("minimized")}><MinimizeIcon /></IconBtn>
+            <IconBtn label={view === "expanded" ? "Collapse" : "Expand"} onClick={() => setView(view === "expanded" ? "normal" : "expanded")}>
+              {view === "expanded" ? <CollapseIcon /> : <ExpandIcon />}
+            </IconBtn>
+            <IconBtn label="Close" onClick={attemptClose}><CloseIcon /></IconBtn>
+          </div>
+        </header>
+
+        {/* Property picker — only when not opened from a specific property */}
+        {!lockProperty && (
+          <div className="px-6 pt-4 pb-1">
+            <label className="text-[10px] uppercase tracking-[0.14em] block mb-1.5" style={{ color: "var(--text-faint)" }}>
+              Property
+            </label>
+            <select className="ui-select w-full" value={selectedProperty} onChange={(e) => setSelectedProperty(e.target.value)}>
+              <option value="" disabled>Select property…</option>
+              {visibleProperties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        {/* Month / Year */}
+        <div className="px-6 pt-4 pb-3 flex items-center gap-3" style={{ borderBottom: "1px solid var(--border-soft)" }}>
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>‹</button>
+            <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 38, textAlign: "center" }}>{year}</span>
+            <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>›</button>
+          </div>
+          <select className="ui-select flex-1" value={monthIdx} onChange={(e) => setMonthIdx(Number(e.target.value))}>
+            {MONTHS_FULL.map((m, i) => <option key={m} value={i}>{m}</option>)}
+          </select>
+        </div>
+
+        {/* Items */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-3">
+          {items.map((it, i) => {
+            const amt = parseFloat(it.amount) || 0;
+            return (
+              <div key={it.key} className="rounded-xl p-3 flex flex-col gap-2.5"
+                style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
+                    Item {i + 1}
+                  </span>
+                  <button type="button" onClick={() => removeRow(it.key)} aria-label="Remove item"
+                    className="w-6 h-6 rounded flex items-center justify-center" style={{ color: "var(--text-faint)" }}>
+                    <CloseIcon size={12} />
+                  </button>
+                </div>
+
+                <input type="text" inputMode="text" placeholder="What was it? e.g. Fixed kitchen tap"
+                  className="w-full px-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)]"
+                  style={{ borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" }}
+                  value={it.description} onChange={(e) => updateItem(it.key, { description: e.target.value })} />
+
+                <div className="grid grid-cols-1 @sm:grid-cols-[1fr_140px] gap-2.5">
+                  <select className="ui-select" value={it.category}
+                    onChange={(e) => updateItem(it.key, { category: e.target.value as ExpenseCategory })}>
+                    {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c]}</option>)}
+                  </select>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-faint)" }}>RM</span>
+                    <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00"
+                      className="w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)] text-right tabular-nums"
+                      style={{ borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" }}
+                      value={it.amount} onChange={(e) => updateItem(it.key, { amount: e.target.value })} />
+                  </div>
+                </div>
+                {amt > 0 && it.description.trim() === "" && (
+                  <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>Tip: add a short note so you remember what this was.</p>
+                )}
+              </div>
+            );
+          })}
+
+          <button type="button" onClick={addRow}
+            className="w-full rounded-xl py-2.5 text-sm font-medium transition"
+            style={{ border: "1px dashed var(--border-strong)", color: "var(--accent)", background: "transparent" }}>
+            + Add another item
+          </button>
+
+          {savedCount > 0 && (
+            <div className="rounded-lg px-4 py-2.5 flex items-center gap-2" style={{ background: "rgba(47,158,111,0.10)", border: "1px solid var(--success)" }}>
+              <span style={{ color: "var(--success)" }}>✓</span>
+              <span className="text-xs font-medium" style={{ color: "var(--success)" }}>
+                Saved {savedCount} {savedCount === 1 ? "expense" : "expenses"} · {MONTHS_FULL[monthIdx]} {year}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Footer with running total */}
+        <footer className="px-6 py-4 flex flex-col gap-3" style={{ borderTop: "1px solid var(--border-soft)" }}>
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
+                Total · {validItems.length} {validItems.length === 1 ? "item" : "items"}
+              </span>
+              <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+                Expenses YTD becomes {fmt(ytd.expenses + total)}
+              </span>
+            </div>
+            <span className="text-xl font-bold tabular-nums" style={{ color: "var(--danger)" }}>{fmt(total)}</span>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" className="ui-btn" onClick={attemptClose}>{dirty ? "Discard" : "Close"}</button>
+            <button type="button" className="ui-btn ui-btn-primary" disabled={!canSave || savedCount > 0}
+              style={{ opacity: !canSave || savedCount > 0 ? 0.55 : 1 }} onClick={handleSave}>
+              {savedCount > 0 ? "Saved ✓" : `Save ${validItems.length || ""} ${validItems.length === 1 ? "expense" : "expenses"}`.trim()}
+            </button>
+          </div>
+        </footer>
+      </aside>
+
+      {confirmOpen && (
+        <ConfirmDialog canSave={canSave} onSave={handleSave} onDiscard={() => { setConfirmOpen(false); onClose(); }} onCancel={() => setConfirmOpen(false)} />
+      )}
+
+      <Keyframes />
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  canSave, onSave, onDiscard, onCancel,
+}: {
+  canSave: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <button type="button" aria-label="Keep editing" onClick={onCancel} className="absolute inset-0"
+        style={{ background: "rgba(15,17,22,0.48)", animation: "exFadeIn 120ms ease" }} />
+      <div role="alertdialog" aria-modal="true" aria-labelledby="exp-discard-title"
+        className="relative w-full max-w-sm rounded-2xl p-6"
+        style={{ background: "var(--surface)", border: "1px solid var(--border-soft)", boxShadow: "0 24px 64px rgba(15,17,22,0.24)", animation: "exPop 160ms cubic-bezier(.2,.7,.2,1)" }}>
+        <h3 id="exp-discard-title" className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>Unsaved expenses</h3>
+        <p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          You have expenses you haven&apos;t saved yet. Save them or discard and close?
+        </p>
+        <div className="flex items-center justify-end gap-2 mt-6">
+          <button type="button" className="ui-btn" onClick={onCancel}>Keep editing</button>
+          <button type="button" className="ui-btn" onClick={onDiscard} style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>Discard</button>
+          <button type="button" className="ui-btn ui-btn-primary" disabled={!canSave} onClick={onSave}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IconBtn({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+      className="w-8 h-8 rounded-md flex items-center justify-center"
+      style={{ color: "var(--text-muted)", border: "1px solid var(--border-soft)", background: "var(--surface)" }}>
+      {children}
+    </button>
+  );
+}
+
+function CloseIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+function MinimizeIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /></svg>;
+}
+function ExpandIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>;
+}
+function CollapseIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" /></svg>;
+}
+
+function Keyframes() {
+  return (
+    <style jsx global>{`
+      @keyframes exSlideIn { from { transform: translateX(16px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes exSlideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes exFadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes exPop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    `}</style>
+  );
+}

@@ -3,12 +3,21 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
+import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
 import {
   MONTHS,
   PAYMENT_METHOD_LABEL,
   PAYMENT_STATUS_LABEL,
   type PaymentStatus,
 } from "@/types/rental";
+
+type EntryState = {
+  open: boolean;
+  propertyId?: string;
+  unitId?: string;
+  month?: number;
+  year?: number;
+};
 
 const CUR_YEAR = new Date().getFullYear();
 
@@ -35,6 +44,7 @@ export default function RevenuePage() {
   const [filterProp, setFilterProp] = useState("all");
   const [filterUnit, setFilterUnit] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [entry, setEntry] = useState<EntryState>({ open: false });
 
   const years = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i);
 
@@ -89,9 +99,9 @@ export default function RevenuePage() {
             All rental income across all properties.
           </p>
         </div>
-        <Link href="/admin/revenue/new" className="ui-btn ui-btn-primary">
+        <button type="button" className="ui-btn ui-btn-primary" onClick={() => setEntry({ open: true })}>
           + Enter Revenue
-        </Link>
+        </button>
       </div>
 
       {/* Filters */}
@@ -170,12 +180,13 @@ export default function RevenuePage() {
         <div className="ui-card p-12 text-center">
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             No revenue entries found.{" "}
-            <Link
-              href="/admin/revenue/new"
+            <button
+              type="button"
+              onClick={() => setEntry({ open: true })}
               style={{ color: "var(--accent)" }}
             >
               Enter revenue
-            </Link>{" "}
+            </button>{" "}
             to get started.
           </p>
         </div>
@@ -314,8 +325,9 @@ export default function RevenuePage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Link
-                          href={`/admin/revenue/new?property=${entry.property_id}&unit=${entry.unit_id}&month=${entry.month - 1}&year=${entry.year}`}
+                        <button
+                          type="button"
+                          onClick={() => setEntry({ open: true, propertyId: entry.property_id, unitId: entry.unit_id, month: entry.month - 1, year: entry.year })}
                           className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
                           title="Edit"
                           style={{ color: "var(--text-muted)" }}
@@ -324,7 +336,7 @@ export default function RevenuePage() {
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                           </svg>
-                        </Link>
+                        </button>
                         <button
                           type="button"
                           title="Delete"
@@ -370,6 +382,16 @@ export default function RevenuePage() {
           </table>
         </div>
       )}
+
+      {/* Enter / edit revenue — same drawer used on the property page */}
+      <RevenueEntryDrawer
+        open={entry.open}
+        onClose={() => setEntry({ open: false })}
+        propertyId={entry.propertyId}
+        unitId={entry.unitId}
+        preselectedMonth={entry.month}
+        preselectedYear={entry.year}
+      />
     </div>
   );
 }

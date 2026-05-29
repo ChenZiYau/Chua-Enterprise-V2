@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
+import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
 import {
   MONTHS,
   EXPENSE_CATEGORIES,
@@ -26,6 +27,7 @@ export default function ExpensesPage() {
   const [filterYear, setFilterYear] = useState(CUR_YEAR);
   const [filterProp, setFilterProp] = useState("all");
   const [filterCategory, setFilterCategory] = useState<ExpenseCategory | "all">("all");
+  const [addOpen, setAddOpen] = useState(false);
 
   const years = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i);
 
@@ -61,9 +63,9 @@ export default function ExpensesPage() {
             All property-level expenses across all properties.
           </p>
         </div>
-        <Link href="/admin/expenses/new" className="ui-btn ui-btn-primary">
+        <button type="button" className="ui-btn ui-btn-primary" onClick={() => setAddOpen(true)}>
           + Add Expense
-        </Link>
+        </button>
       </div>
 
       {/* Filters */}
@@ -121,12 +123,13 @@ export default function ExpensesPage() {
         <div className="ui-card p-12 text-center">
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             No expense entries found.{" "}
-            <Link
-              href="/admin/expenses/new"
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
               style={{ color: "var(--accent)" }}
             >
               Add an expense
-            </Link>{" "}
+            </button>{" "}
             to get started.
           </p>
         </div>
@@ -282,6 +285,9 @@ export default function ExpensesPage() {
           </table>
         </div>
       )}
+
+      {/* Add Expense — same itemized drawer used on the property page */}
+      <ExpenseEntryDrawer open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 }
