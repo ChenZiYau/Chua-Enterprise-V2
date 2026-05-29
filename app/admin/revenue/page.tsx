@@ -3,7 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
-import { MONTHS } from "@/types/rental";
+import {
+  MONTHS,
+  PAYMENT_METHOD_LABEL,
+  PAYMENT_STATUS_LABEL,
+  type PaymentStatus,
+} from "@/types/rental";
 
 const CUR_YEAR = new Date().getFullYear();
 
@@ -15,60 +20,147 @@ function fmt(value: number) {
   }).format(value);
 }
 
+const STATUS_COLORS: Record<PaymentStatus, { bg: string; text: string }> = {
+  paid: { bg: "rgba(47,158,111,0.10)", text: "var(--success)" },
+  partial: { bg: "rgba(224,162,61,0.10)", text: "var(--warning)" },
+  pending: { bg: "rgba(93,95,239,0.10)", text: "var(--accent)" },
+  overdue: { bg: "rgba(211,84,84,0.10)", text: "var(--danger)" },
+};
+
 export default function RevenuePage() {
-  const { revenueEntries, visibleProperties, getUnit } = useRental();
+  const { revenueEntries, visibleProperties, getUnit, deleteRevenueEntry } =
+    useRental();
+
   const [filterYear, setFilterYear] = useState(CUR_YEAR);
   const [filterProp, setFilterProp] = useState("all");
+  const [filterUnit, setFilterUnit] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+
+  const years = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i);
+
+  // Units for selected property
+  const unitOptions =
+    filterProp === "all"
+      ? []
+      : revenueEntries
+          .filter((e) => e.property_id === filterProp)
+          .reduce<{ id: string; name: string }[]>((acc, e) => {
+            if (!acc.find((x) => x.id === e.unit_id)) {
+              const u = getUnit(e.unit_id);
+              acc.push({ id: e.unit_id, name: u?.name ?? e.unit_id });
+            }
+            return acc;
+          }, []);
 
   const filtered = revenueEntries
     .filter((e) => e.year === filterYear)
     .filter((e) => filterProp === "all" || e.property_id === filterProp)
+    .filter((e) => filterUnit === "all" || e.unit_id === filterUnit)
+    .filter(
+      (e) => filterStatus === "all" || e.payment_status === filterStatus
+    )
     .sort((a, b) => {
-      if (a.property_id !== b.property_id) return a.property_id.localeCompare(b.property_id);
+      if (a.property_id !== b.property_id)
+        return a.property_id.localeCompare(b.property_id);
       if (a.month !== b.month) return a.month - b.month;
       return a.unit_id.localeCompare(b.unit_id);
     });
 
   const totalRevenue = filtered.reduce((s, e) => s + e.total_amount, 0);
 
-  const years = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i);
+  function handleDelete(id: string, label: string) {
+    if (!confirm(`Delete revenue entry for ${label}? This cannot be undone.`))
+      return;
+    deleteRevenueEntry(id);
+  }
 
   return (
     <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+          <h2
+            className="text-lg font-semibold"
+            style={{ color: "var(--text-primary)" }}
+          >
             Revenue Ledger
           </h2>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
             All rental income across all properties.
           </p>
         </div>
+        <Link href="/admin/revenue/new" className="ui-btn ui-btn-primary">
+          + Enter Revenue
+        </Link>
       </div>
 
       {/* Filters */}
-      <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
+      <div
+        className="ui-card p-4 flex flex-wrap gap-3 items-center"
+      >
+        {/* Year */}
         <select
-          className="ui-select w-auto min-w-[120px]"
+          className="ui-select w-auto min-w-[110px]"
           value={filterYear}
           onChange={(e) => setFilterYear(Number(e.target.value))}
         >
           {years.map((y) => (
-            <option key={y} value={y}>{y}</option>
+            <option key={y} value={y}>
+              {y}
+            </option>
           ))}
         </select>
+
+        {/* Property */}
         <select
-          className="ui-select w-auto min-w-[180px]"
+          className="ui-select w-auto min-w-[160px]"
           value={filterProp}
-          onChange={(e) => setFilterProp(e.target.value)}
+          onChange={(e) => {
+            setFilterProp(e.target.value);
+            setFilterUnit("all");
+          }}
         >
           <option value="all">All Properties</option>
           {visibleProperties.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
           ))}
         </select>
-        <div className="ml-auto text-sm font-semibold" style={{ color: "var(--success)" }}>
+
+        {/* Unit — only shown when a property is selected */}
+        {filterProp !== "all" && unitOptions.length > 0 && (
+          <select
+            className="ui-select w-auto min-w-[140px]"
+            value={filterUnit}
+            onChange={(e) => setFilterUnit(e.target.value)}
+          >
+            <option value="all">All Units</option>
+            {unitOptions.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* Status */}
+        <select
+          className="ui-select w-auto min-w-[130px]"
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+        >
+          <option value="all">All Statuses</option>
+          <option value="paid">Paid</option>
+          <option value="partial">Partial</option>
+          <option value="pending">Pending</option>
+          <option value="overdue">Overdue</option>
+        </select>
+
+        <div
+          className="ml-auto text-sm font-semibold"
+          style={{ color: "var(--success)" }}
+        >
           Total: {fmt(totalRevenue)}
         </div>
       </div>
@@ -78,80 +170,201 @@ export default function RevenuePage() {
         <div className="ui-card p-12 text-center">
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             No revenue entries found.{" "}
-            <Link href="/admin/properties" style={{ color: "var(--accent)" }}>
-              Open a property
+            <Link
+              href="/admin/revenue/new"
+              style={{ color: "var(--accent)" }}
+            >
+              Enter revenue
             </Link>{" "}
-            to start entering rent.
+            to get started.
           </p>
         </div>
       ) : (
-        <div className="ui-card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="ui-card overflow-x-auto">
+          <table className="w-full text-sm whitespace-nowrap">
             <thead style={{ background: "var(--surface-muted)" }}>
               <tr style={{ color: "var(--text-faint)" }}>
-                <th className="text-left text-xs uppercase tracking-wider px-5 py-3">Property</th>
-                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Unit</th>
-                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Month</th>
-                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">Rental</th>
-                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">Electricity</th>
-                <th className="text-right text-xs uppercase tracking-wider px-5 py-3">Total</th>
-                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Invoice</th>
+                <th className="text-left text-xs uppercase tracking-wider px-5 py-3">
+                  Property
+                </th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
+                  Unit
+                </th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
+                  Month
+                </th>
+                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
+                  Rental
+                </th>
+                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
+                  Electricity
+                </th>
+                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
+                  Other
+                </th>
+                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
+                  Total
+                </th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
+                  Method
+                </th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
+                  Status
+                </th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
+                  Invoice
+                </th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {filtered.map((entry) => {
-                const prop = visibleProperties.find((p) => p.id === entry.property_id);
+                const prop = visibleProperties.find(
+                  (p) => p.id === entry.property_id
+                );
                 const unit = getUnit(entry.unit_id);
+                const statusColors =
+                  STATUS_COLORS[entry.payment_status ?? "pending"];
+                const label = `${unit?.name ?? entry.unit_id} — ${MONTHS[entry.month - 1]} ${entry.year}`;
                 return (
                   <tr
                     key={entry.id}
-                    className="border-t"
+                    className="border-t hover:bg-[var(--surface-muted)] transition-colors"
                     style={{ borderColor: "var(--border-soft)" }}
                   >
                     <td className="px-5 py-3">
                       <Link
                         href={`/admin/properties/${entry.property_id}`}
-                        className="font-medium"
+                        className="font-medium hover:underline"
                         style={{ color: "var(--text-primary)" }}
                       >
                         {prop?.name ?? entry.property_id}
                       </Link>
                     </td>
-                    <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
+                    <td
+                      className="px-4 py-3"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
                       {unit?.name ?? entry.unit_id}
                     </td>
-                    <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
+                    <td
+                      className="px-4 py-3"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
                       {MONTHS[entry.month - 1]} {entry.year}
                     </td>
-                    <td className="px-4 py-3 text-right" style={{ color: "var(--text-secondary)" }}>
+                    <td
+                      className="px-4 py-3 text-right tabular-nums"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
                       {fmt(entry.rental_amount)}
                     </td>
-                    <td className="px-4 py-3 text-right" style={{ color: "var(--text-secondary)" }}>
-                      {entry.electricity_amount != null ? fmt(entry.electricity_amount) : "—"}
+                    <td
+                      className="px-4 py-3 text-right tabular-nums"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {entry.electricity_amount != null
+                        ? fmt(entry.electricity_amount)
+                        : "—"}
                     </td>
-                    <td className="px-5 py-3 text-right font-semibold" style={{ color: "var(--success)" }}>
+                    <td
+                      className="px-4 py-3 text-right tabular-nums"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {entry.other_charges_amount != null &&
+                      entry.other_charges_amount > 0
+                        ? fmt(entry.other_charges_amount)
+                        : "—"}
+                    </td>
+                    <td
+                      className="px-4 py-3 text-right font-semibold tabular-nums"
+                      style={{ color: "var(--success)" }}
+                    >
                       {fmt(entry.total_amount)}
+                    </td>
+                    <td
+                      className="px-4 py-3"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {entry.payment_method
+                        ? entry.payment_method === "other"
+                          ? (entry.custom_payment_method ?? "Other")
+                          : PAYMENT_METHOD_LABEL[entry.payment_method]
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className="text-xs font-medium px-2 py-0.5 rounded-full"
+                        style={{
+                          background: statusColors.bg,
+                          color: statusColors.text,
+                        }}
+                      >
+                        {PAYMENT_STATUS_LABEL[entry.payment_status ?? "pending"]}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {entry.invoice_generated ? (
-                        <span className="ui-chip ui-chip-success">✓ Generated</span>
+                        <span className="ui-chip ui-chip-success text-xs">
+                          ✓ Generated
+                        </span>
                       ) : (
-                        <span className="ui-chip">Pending</span>
+                        <span className="ui-chip text-xs">Pending</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          href={`/admin/revenue/new?property=${entry.property_id}&unit=${entry.unit_id}&month=${entry.month - 1}&year=${entry.year}`}
+                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          title="Edit"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </Link>
+                        <button
+                          type="button"
+                          title="Delete"
+                          onClick={() => handleDelete(entry.id, label)}
+                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          style={{ color: "var(--danger)" }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
             <tfoot style={{ background: "var(--surface-muted)" }}>
-              <tr className="border-t" style={{ borderColor: "var(--border-soft)" }}>
-                <td colSpan={5} className="px-5 py-3 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Total ({filtered.length} entries)
+              <tr
+                className="border-t"
+                style={{ borderColor: "var(--border-soft)" }}
+              >
+                <td
+                  colSpan={6}
+                  className="px-5 py-3 text-sm font-semibold"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  Total ({filtered.length}{" "}
+                  {filtered.length === 1 ? "entry" : "entries"})
                 </td>
-                <td className="px-5 py-3 text-right font-bold" style={{ color: "var(--success)" }}>
+                <td
+                  className="px-4 py-3 text-right font-bold tabular-nums"
+                  style={{ color: "var(--success)" }}
+                >
                   {fmt(totalRevenue)}
                 </td>
-                <td />
+                <td colSpan={4} />
               </tr>
             </tfoot>
           </table>

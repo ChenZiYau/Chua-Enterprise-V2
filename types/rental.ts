@@ -48,6 +48,38 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "other",
 ];
 
+export type PaymentMethod =
+  | "cash"
+  | "bank_transfer"
+  | "cheque"
+  | "online"
+  | "other";
+
+export type PaymentStatus = "paid" | "partial" | "pending" | "overdue";
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  cash: "Cash",
+  bank_transfer: "Bank Transfer",
+  cheque: "Cheque",
+  online: "Online / e-Wallet",
+  other: "Other",
+};
+
+export const PAYMENT_METHODS: PaymentMethod[] = [
+  "cash",
+  "bank_transfer",
+  "cheque",
+  "online",
+  "other",
+];
+
+export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
+  paid: "Paid",
+  partial: "Partial",
+  pending: "Pending",
+  overdue: "Overdue",
+};
+
 export interface Property {
   id: string;
   slug: string;
@@ -91,7 +123,12 @@ export interface RevenueEntry {
   rental_amount: number;
   electricity_units?: number | null;
   electricity_amount?: number | null;
+  other_charges_amount?: number | null;
   total_amount: number;
+  payment_date?: string | null;
+  payment_method?: PaymentMethod | null;
+  custom_payment_method?: string | null;
+  payment_status: PaymentStatus;
   notes?: string | null;
   invoice_generated: boolean;
   created_at: string;
@@ -102,9 +139,13 @@ export interface ExpenseEntry {
   property_id: string;
   year: number;
   month: number;
+  expense_date?: string | null;
   category: ExpenseCategory;
+  custom_category?: string | null;
   amount: number;
   description?: string | null;
+  is_recurring?: boolean;
+  is_irregular?: boolean;
   created_at: string;
 }
 
@@ -128,4 +169,9 @@ export const STATUS_LABEL: Record<PropertyStatus, string> = {
 export const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+export const MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
