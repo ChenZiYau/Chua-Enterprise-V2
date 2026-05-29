@@ -10,6 +10,44 @@ export type PropertyType =
   | "commercial"
   | "other";
 
+export type ExpenseCategory =
+  | "electricity"
+  | "water"
+  | "indah_water"
+  | "assessment"
+  | "quit_rent"
+  | "insurance"
+  | "internet"
+  | "maintenance"
+  | "sinking_fund"
+  | "other";
+
+export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
+  electricity: "Electricity",
+  water: "Water",
+  indah_water: "Indah Water",
+  assessment: "Assessment (Cukai Taksiran)",
+  quit_rent: "Quit Rent (Cukai Tanah)",
+  insurance: "Insurance",
+  internet: "Internet",
+  maintenance: "Maintenance / Repairs",
+  sinking_fund: "Sinking Fund",
+  other: "Other",
+};
+
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  "electricity",
+  "water",
+  "indah_water",
+  "assessment",
+  "quit_rent",
+  "insurance",
+  "internet",
+  "maintenance",
+  "sinking_fund",
+  "other",
+];
+
 export interface Property {
   id: string;
   slug: string;
@@ -24,18 +62,50 @@ export interface Property {
   status: PropertyStatus;
   image_url?: string | null;
   description?: string | null;
-
-  /** Total rentable units (rooms for room_rental, 1 for whole_unit). */
   total_units: number;
-  /** Currently rented units. */
   rented_units: number;
-
-  /** Convenience aggregates — could be derived in the future. */
   ytd_revenue?: number;
   ytd_expenses?: number;
-
   deleted_at?: string | null;
   delete_expires_at?: string | null;
+}
+
+export interface Unit {
+  id: string;
+  property_id: string;
+  name: string;
+  label: string;
+  sort_order: number;
+  is_rented: boolean;
+  tenant_name?: string | null;
+  rental_rate?: number | null;
+  electricity_free_units: number;
+}
+
+export interface RevenueEntry {
+  id: string;
+  property_id: string;
+  unit_id: string;
+  year: number;
+  month: number;
+  rental_amount: number;
+  electricity_units?: number | null;
+  electricity_amount?: number | null;
+  total_amount: number;
+  notes?: string | null;
+  invoice_generated: boolean;
+  created_at: string;
+}
+
+export interface ExpenseEntry {
+  id: string;
+  property_id: string;
+  year: number;
+  month: number;
+  category: ExpenseCategory;
+  amount: number;
+  description?: string | null;
+  created_at: string;
 }
 
 export interface PropertyFilters {
@@ -54,3 +124,8 @@ export const STATUS_LABEL: Record<PropertyStatus, string> = {
   inactive: "Inactive",
   under_service: "Under Service",
 };
+
+export const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
