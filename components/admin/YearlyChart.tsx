@@ -4,22 +4,19 @@ import { useMemo, useState } from "react";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const DATA: Record<number, number[]> = {
+const FALLBACK_DATA: Record<number, number[]> = {
   2025: [3200, 3450, 3380, 3700, 4100, 3950, 4280, 4450, 4520, 4810, 4960, 5120],
   2026: [4300, 4550, 4280, 4920, 5180, 4870, 5510, 5630, 5290, 5980, 5740, 6120],
 };
 
 type Series = {
   year: number;
-  stroke: string;     // line color
-  glow: string;       // for filter
-  gradientId: string; // id for area fill
+  stroke: string;
+  glow: string;
+  gradientId: string;
 };
 
-const SERIES: Series[] = [
-  { year: 2025, stroke: "var(--accent)", glow: "var(--accent)",  gradientId: "area-2025" },
-  { year: 2026, stroke: "#c98a2b",       glow: "#c98a2b",         gradientId: "area-2026" },
-];
+const PALETTE = ["var(--accent)", "#c98a2b", "#6b8e6e", "#a06bb4"];
 
 // Big virtual canvas so SVG content scales down in real layouts.
 const WIDTH = 1200;
@@ -58,22 +55,37 @@ function smoothPath(points: { x: number; y: number }[]): string {
   return d.join(" ");
 }
 
-type Filter = "all" | 2025 | 2026;
+type Filter = number | "all";
 
-export function YearlyChart() {
+export function YearlyChart({ data }: { data?: Record<number, number[]> } = {}) {
+  const DATA = data && Object.keys(data).length ? data : FALLBACK_DATA;
+  const SERIES: Series[] = useMemo(
+    () =>
+      Object.keys(DATA)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((year, i) => ({
+          year,
+          stroke: PALETTE[i % PALETTE.length],
+          glow: PALETTE[i % PALETTE.length],
+          gradientId: `area-${year}`,
+        })),
+    [DATA]
+  );
+
   const [filter, setFilter] = useState<Filter>("all");
   const [hoverMonth, setHoverMonth] = useState<number | null>(null);
 
   const visible = useMemo(
     () => (filter === "all" ? SERIES : SERIES.filter((s) => s.year === filter)),
-    [filter]
+    [filter, SERIES]
   );
 
   const max = useMemo(() => {
-    const all = visible.flatMap((s) => DATA[s.year]);
+    const all = visible.flatMap((s) => DATA[s.year] ?? []);
     const m = Math.max(1, ...all);
-    return Math.ceil(m / 1000) * 1000; // round to nearest 1000 for clean gridlines
-  }, [visible]);
+    return Math.ceil(m / 1000) * 1000;
+  }, [visible, DATA]);
 
   const min = 0;
 
@@ -98,10 +110,15 @@ export function YearlyChart() {
   const totals = useMemo(() => {
     return visible.map((s) => ({
       year: s.year,
-      total: DATA[s.year].reduce((a, b) => a + b, 0),
+      total: (DATA[s.year] ?? []).reduce((a, b) => a + b, 0),
       color: s.stroke,
     }));
-  }, [visible]);
+  }, [visible, DATA]);
+
+  const filterOptions: Filter[] = useMemo(
+    () => ["all", ...SERIES.map((s) => s.year)],
+    [SERIES]
+  );
 
   return (
     <section className="ui-card p-6 relative overflow-hidden">
@@ -150,7 +167,7 @@ export function YearlyChart() {
           className="inline-flex p-0.5 rounded-lg"
           style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}
         >
-          {(["all", 2025, 2026] as Filter[]).map((f) => {
+          {filterOptions.map((f) => {
             const active = filter === f;
             return (
               <button
@@ -237,7 +254,7 @@ export function YearlyChart() {
 
           {/* Series */}
           {visible.map((s) => {
-            const pts = toPoints(DATA[s.year]);
+            const pts = toPoints(DATA[s.year] ?? []);
             const linePath = smoothPath(pts);
             const areaPath =
               linePath +
@@ -284,7 +301,7 @@ export function YearlyChart() {
 
           {/* Dots on every point */}
           {visible.map((s) => {
-            const pts = toPoints(DATA[s.year]);
+            const pts = toPoints(DATA[s.year] ?? []);
             return (
               <g key={`dots-${s.year}`} style={{ pointerEvents: "none" }}>
                 {pts.map((p) => {
@@ -339,7 +356,7 @@ export function YearlyChart() {
             const lines = visible.map((s) => ({
               year: s.year,
               color: s.stroke,
-              value: DATA[s.year][month],
+              value: (DATA[s.year] ?? [])[month] ?? 0,
             }));
             const rowH = 22;
             const tooltipW = 168;

@@ -2,6 +2,7 @@ node_modules
 .next
 .env
 .env.local
+.notion/
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts.bak

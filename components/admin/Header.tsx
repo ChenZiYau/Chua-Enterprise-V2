@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { IconBell, IconSearch } from "./icons";
+import { useMobileNav } from "./MobileNavContext";
 
 const titleMap: { pattern: RegExp; title: string; subtitle: string }[] = [
   { pattern: /^\/admin\/?$/, title: "Dashboard", subtitle: "Property management overview" },
@@ -26,18 +27,33 @@ function resolveTitle(pathname: string | null) {
 export function Header() {
   const pathname = usePathname();
   const { title, subtitle } = resolveTitle(pathname);
+  const { toggle } = useMobileNav();
 
   return (
     <header
-      className="flex items-center gap-4 px-6 lg:px-8 py-5"
+      className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 py-4 sm:py-5"
       style={{ background: "transparent" }}
     >
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label="Open navigation menu"
+        className="lg:hidden w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+        style={{ background: "var(--surface-muted)", color: "var(--text-secondary)" }}
+      >
+        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="4" y1="7" x2="20" y2="7" />
+          <line x1="4" y1="12" x2="20" y2="12" />
+          <line x1="4" y1="17" x2="20" y2="17" />
+        </svg>
+      </button>
+
       <div className="min-w-0 mr-auto">
-        <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>
+        <h1 className="text-lg sm:text-xl font-semibold tracking-tight truncate" style={{ color: "var(--text-primary)" }}>
           {title}
         </h1>
         {subtitle ? (
-          <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
+          <p className="text-xs sm:text-sm mt-0.5 hidden sm:block" style={{ color: "var(--text-muted)" }}>
             {subtitle}
           </p>
         ) : null}

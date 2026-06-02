@@ -93,7 +93,7 @@ export default function ExpensesPage() {
   }
 
   return (
-    <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 flex flex-col gap-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>

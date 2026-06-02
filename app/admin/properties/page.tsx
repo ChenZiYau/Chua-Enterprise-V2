@@ -37,7 +37,7 @@ export default function PropertiesPage() {
   const wholeCount = properties.filter((p) => p.rental_model === "whole_unit").length;
 
   return (
-    <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 flex flex-col gap-8">
       {/* Header */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">

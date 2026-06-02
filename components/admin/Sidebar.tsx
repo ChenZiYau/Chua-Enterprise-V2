@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
+import { useMobileNav } from "./MobileNavContext";
 import {
   IconDashboard,
   IconProperties,
@@ -43,17 +44,15 @@ function isActive(pathname: string | null, href: string) {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { open, setOpen } = useMobileNav();
 
   function handleLogout() {
     signOut();
     router.replace("/login");
   }
 
-  return (
-    <aside
-      className="hidden lg:flex flex-col w-[248px] shrink-0 p-5 gap-6 sticky top-0 h-screen"
-      style={{ background: "var(--sidebar)", color: "var(--sidebar-text)" }}
-    >
+  const inner = (
+    <>
       <div className="flex items-center gap-2.5 px-1.5 pt-1">
         <div
           className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -77,6 +76,7 @@ export function Sidebar() {
               href={item.href}
               className="ui-nav-item"
               data-active={active || undefined}
+              onClick={() => setOpen(false)}
             >
               <Icon className="ui-nav-icon" />
               <span>{item.label}</span>
@@ -115,6 +115,43 @@ export function Sidebar() {
           </button>
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside
+        className="hidden lg:flex flex-col w-[248px] shrink-0 p-5 gap-6 sticky top-0 h-screen"
+        style={{ background: "var(--sidebar)", color: "var(--sidebar-text)" }}
+      >
+        {inner}
+      </aside>
+
+      {/* Mobile overlay */}
+      <div
+        className={
+          "lg:hidden fixed inset-0 z-40 transition-opacity duration-200 " +
+          (open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none")
+        }
+        style={{ background: "rgba(0,0,0,0.5)" }}
+        onClick={() => setOpen(false)}
+        aria-hidden
+      />
+
+      {/* Mobile drawer */}
+      <aside
+        className={
+          "lg:hidden fixed top-0 left-0 z-50 flex flex-col w-[260px] max-w-[80vw] h-screen p-5 gap-6 transition-transform duration-200 ease-out " +
+          (open ? "translate-x-0" : "-translate-x-full")
+        }
+        style={{ background: "var(--sidebar)", color: "var(--sidebar-text)" }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation"
+      >
+        {inner}
+      </aside>
+    </>
   );
 }
