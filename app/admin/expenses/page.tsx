@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
@@ -13,6 +13,19 @@ import {
 
 const CUR_YEAR = new Date().getFullYear();
 
+function monthKey(y: number, m: number) {
+  return y * 100 + m;
+}
+function parseMonthInput(s: string): { y: number; m: number } | null {
+  if (!s) return null;
+  const [y, m] = s.split("-").map(Number);
+  if (!y || !m) return null;
+  return { y, m };
+}
+function toMonthInput(y: number, m: number) {
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
 function fmt(value: number) {
   return new Intl.NumberFormat("en-MY", {
     style: "currency",
@@ -24,22 +37,53 @@ function fmt(value: number) {
 export default function ExpensesPage() {
   const { expenseEntries, visibleProperties, deleteExpenseEntry } = useRental();
 
-  const [filterYear, setFilterYear] = useState(CUR_YEAR);
+  const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
+  const [toMonth, setToMonth] = useState(toMonthInput(CUR_YEAR, 12));
+  const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
   const [filterCategory, setFilterCategory] = useState<ExpenseCategory | "all">("all");
   const [addOpen, setAddOpen] = useState(false);
 
-  const years = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i);
-
-  const filtered = expenseEntries
-    .filter((e) => e.year === filterYear)
-    .filter((e) => filterProp === "all" || e.property_id === filterProp)
-    .filter((e) => filterCategory === "all" || e.category === filterCategory)
-    .sort((a, b) => {
-      if (a.property_id !== b.property_id)
+  const filtered = useMemo(() => {
+    const from = parseMonthInput(fromMonth);
+    const to = parseMonthInput(toMonth);
+    const q = search.trim().toLowerCase();
+    return expenseEntries
+      .filter((e) => {
+        if (from && monthKey(e.year, e.month) < monthKey(from.y, from.m)) return false;
+        if (to && monthKey(e.year, e.month) > monthKey(to.y, to.m)) return false;
+        return true;
+      })
+      .filter((e) => filterProp === "all" || e.property_id === filterProp)
+      .filter((e) => filterCategory === "all" || e.category === filterCategory)
+      .filter((e) => {
+        if (!q) return true;
+        const prop = visibleProperties.find((p) => p.id === e.property_id);
+        const catLabel =
+          e.category === "other" && e.custom_category
+            ? e.custom_category
+            : EXPENSE_CATEGORY_LABEL[e.category];
+        return (
+          (prop?.name ?? "").toLowerCase().includes(q) ||
+          catLabel.toLowerCase().includes(q) ||
+          (e.description ?? "").toLowerCase().includes(q) ||
+          (e.custom_category ?? "").toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        if (a.month !== b.month) return b.month - a.month;
         return a.property_id.localeCompare(b.property_id);
-      return a.month - b.month;
-    });
+      });
+  }, [
+    expenseEntries,
+    fromMonth,
+    toMonth,
+    search,
+    filterProp,
+    filterCategory,
+    visibleProperties,
+  ]);
 
   const totalExpenses = filtered.reduce((s, e) => s + e.amount, 0);
 
@@ -70,17 +114,29 @@ export default function ExpensesPage() {
 
       {/* Filters */}
       <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
-        <select
-          className="ui-select w-auto min-w-[110px]"
-          value={filterYear}
-          onChange={(e) => setFilterYear(Number(e.target.value))}
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
+        <input
+          type="month"
+          className="ui-input w-auto"
+          value={fromMonth}
+          onChange={(e) => setFromMonth(e.target.value)}
+          aria-label="From month"
+        />
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
+        <input
+          type="month"
+          className="ui-input w-auto"
+          value={toMonth}
+          onChange={(e) => setToMonth(e.target.value)}
+          aria-label="To month"
+        />
+
+        <input
+          type="search"
+          className="ui-input w-auto min-w-[200px] flex-1 max-w-[260px]"
+          placeholder="Search property, category, description…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
 
         <select
           className="ui-select w-auto min-w-[160px]"

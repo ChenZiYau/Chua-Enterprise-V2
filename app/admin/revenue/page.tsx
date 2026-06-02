@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
@@ -21,6 +21,19 @@ type EntryState = {
 
 const CUR_YEAR = new Date().getFullYear();
 
+function monthKey(y: number, m: number) {
+  return y * 100 + m;
+}
+function parseMonthInput(s: string): { y: number; m: number } | null {
+  if (!s) return null;
+  const [y, m] = s.split("-").map(Number);
+  if (!y || !m) return null;
+  return { y, m };
+}
+function toMonthInput(y: number, m: number) {
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
 function fmt(value: number) {
   return new Intl.NumberFormat("en-MY", {
     style: "currency",
@@ -40,13 +53,13 @@ export default function RevenuePage() {
   const { revenueEntries, visibleProperties, getUnit, deleteRevenueEntry } =
     useRental();
 
-  const [filterYear, setFilterYear] = useState(CUR_YEAR);
+  const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
+  const [toMonth, setToMonth] = useState(toMonthInput(CUR_YEAR, 12));
+  const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
   const [filterUnit, setFilterUnit] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [entry, setEntry] = useState<EntryState>({ open: false });
-
-  const years = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i);
 
   // Units for selected property
   const unitOptions =
@@ -62,19 +75,50 @@ export default function RevenuePage() {
             return acc;
           }, []);
 
-  const filtered = revenueEntries
-    .filter((e) => e.year === filterYear)
-    .filter((e) => filterProp === "all" || e.property_id === filterProp)
-    .filter((e) => filterUnit === "all" || e.unit_id === filterUnit)
-    .filter(
-      (e) => filterStatus === "all" || e.payment_status === filterStatus
-    )
-    .sort((a, b) => {
-      if (a.property_id !== b.property_id)
-        return a.property_id.localeCompare(b.property_id);
-      if (a.month !== b.month) return a.month - b.month;
-      return a.unit_id.localeCompare(b.unit_id);
-    });
+  const filtered = useMemo(() => {
+    const from = parseMonthInput(fromMonth);
+    const to = parseMonthInput(toMonth);
+    const q = search.trim().toLowerCase();
+
+    return revenueEntries
+      .filter((e) => {
+        if (from && monthKey(e.year, e.month) < monthKey(from.y, from.m)) return false;
+        if (to && monthKey(e.year, e.month) > monthKey(to.y, to.m)) return false;
+        return true;
+      })
+      .filter((e) => filterProp === "all" || e.property_id === filterProp)
+      .filter((e) => filterUnit === "all" || e.unit_id === filterUnit)
+      .filter((e) => filterStatus === "all" || e.payment_status === filterStatus)
+      .filter((e) => {
+        if (!q) return true;
+        const prop = visibleProperties.find((p) => p.id === e.property_id);
+        const unit = getUnit(e.unit_id);
+        return (
+          (prop?.name ?? "").toLowerCase().includes(q) ||
+          (unit?.name ?? "").toLowerCase().includes(q) ||
+          (unit?.tenant_name ?? "").toLowerCase().includes(q) ||
+          (e.notes ?? "").toLowerCase().includes(q) ||
+          (e.custom_payment_method ?? "").toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        if (a.month !== b.month) return b.month - a.month;
+        if (a.property_id !== b.property_id)
+          return a.property_id.localeCompare(b.property_id);
+        return a.unit_id.localeCompare(b.unit_id);
+      });
+  }, [
+    revenueEntries,
+    fromMonth,
+    toMonth,
+    search,
+    filterProp,
+    filterUnit,
+    filterStatus,
+    visibleProperties,
+    getUnit,
+  ]);
 
   const totalRevenue = filtered.reduce((s, e) => s + e.total_amount, 0);
 
@@ -105,21 +149,32 @@ export default function RevenuePage() {
       </div>
 
       {/* Filters */}
-      <div
-        className="ui-card p-4 flex flex-wrap gap-3 items-center"
-      >
-        {/* Year */}
-        <select
-          className="ui-select w-auto min-w-[110px]"
-          value={filterYear}
-          onChange={(e) => setFilterYear(Number(e.target.value))}
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
+      <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
+        {/* Date range */}
+        <input
+          type="month"
+          className="ui-input w-auto"
+          value={fromMonth}
+          onChange={(e) => setFromMonth(e.target.value)}
+          aria-label="From month"
+        />
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
+        <input
+          type="month"
+          className="ui-input w-auto"
+          value={toMonth}
+          onChange={(e) => setToMonth(e.target.value)}
+          aria-label="To month"
+        />
+
+        {/* Search */}
+        <input
+          type="search"
+          className="ui-input w-auto min-w-[200px] flex-1 max-w-[280px]"
+          placeholder="Search property, unit, tenant, notes…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
 
         {/* Property */}
         <select

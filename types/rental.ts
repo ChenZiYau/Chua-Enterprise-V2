@@ -149,6 +149,20 @@ export interface ExpenseEntry {
   created_at: string;
 }
 
+export interface Tenant {
+  id: string;
+  name: string;
+  ic_number?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  previous_address?: string | null;
+  unit_id?: string | null;
+  lease_start?: string | null;
+  lease_end?: string | null;
+  notes?: string | null;
+  created_at: string;
+}
+
 export interface PropertyFilters {
   search: string;
   rental_model: RentalModel | "all";

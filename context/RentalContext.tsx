@@ -13,6 +13,7 @@ import type {
   Unit,
   RevenueEntry,
   ExpenseEntry,
+  Tenant,
 } from "@/types/rental";
 import { seedProperties, seedUnits } from "@/data/rentalData";
 
@@ -20,6 +21,7 @@ const STORAGE_KEY_PROPS = "chua.rental.properties.v2";
 const STORAGE_KEY_UNITS = "chua.rental.units.v1";
 const STORAGE_KEY_REVENUE = "chua.rental.revenue.v1";
 const STORAGE_KEY_EXPENSES = "chua.rental.expenses.v1";
+const STORAGE_KEY_TENANTS = "chua.rental.tenants.v1";
 
 type PropertyInput = Omit<Property, "id" | "slug"> & {
   id?: string;
@@ -28,6 +30,7 @@ type PropertyInput = Omit<Property, "id" | "slug"> & {
 
 type RevenueInput = Omit<RevenueEntry, "id" | "created_at">;
 type ExpenseInput = Omit<ExpenseEntry, "id" | "created_at">;
+type TenantInput = Omit<Tenant, "id" | "created_at"> & { id?: string };
 
 interface RentalContextValue {
   // ── Properties ───────────────────────────────────────────────────
@@ -60,6 +63,13 @@ interface RentalContextValue {
   deleteExpenseEntry: (id: string) => void;
   getExpensesForProperty: (propertyId: string, year: number) => ExpenseEntry[];
   getExpensesForMonth: (propertyId: string, year: number, month: number) => ExpenseEntry[];
+
+  // ── Tenants ──────────────────────────────────────────────────────
+  tenants: Tenant[];
+  getTenant: (id: string) => Tenant | undefined;
+  addTenant: (input: TenantInput) => Tenant;
+  updateTenant: (id: string, patch: Partial<Tenant>) => void;
+  deleteTenant: (id: string) => void;
 
   // ── Aggregates ───────────────────────────────────────────────────
   getPropertyYTD: (propertyId: string, year: number) => { revenue: number; expenses: number; net: number };
@@ -103,6 +113,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
   const [units, setUnits] = useState<Unit[]>(seedUnits);
   const [revenueEntries, setRevenueEntries] = useState<RevenueEntry[]>([]);
   const [expenseEntries, setExpenseEntries] = useState<ExpenseEntry[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   // ── Hydrate from localStorage ──────────────────────────────────────
@@ -111,6 +122,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     setUnits(loadFromStorage(STORAGE_KEY_UNITS, seedUnits));
     setRevenueEntries(loadFromStorage<RevenueEntry[]>(STORAGE_KEY_REVENUE, []));
     setExpenseEntries(loadFromStorage<ExpenseEntry[]>(STORAGE_KEY_EXPENSES, []));
+    setTenants(loadFromStorage<Tenant[]>(STORAGE_KEY_TENANTS, []));
     setHydrated(true);
   }, []);
 
@@ -134,6 +146,11 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     saveToStorage(STORAGE_KEY_EXPENSES, expenseEntries);
   }, [expenseEntries, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveToStorage(STORAGE_KEY_TENANTS, tenants);
+  }, [tenants, hydrated]);
 
   // ── Property CRUD ──────────────────────────────────────────────────
   const createProperty = useCallback((input: PropertyInput): Property => {
@@ -227,6 +244,25 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     setExpenseEntries((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
+  // ── Tenant CRUD ────────────────────────────────────────────────────
+  const addTenant = useCallback((input: TenantInput): Tenant => {
+    const tenant: Tenant = {
+      ...input,
+      id: input.id ?? generateId("ten"),
+      created_at: new Date().toISOString(),
+    };
+    setTenants((prev) => [tenant, ...prev]);
+    return tenant;
+  }, []);
+
+  const updateTenant = useCallback((id: string, patch: Partial<Tenant>) => {
+    setTenants((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }, []);
+
+  const deleteTenant = useCallback((id: string) => {
+    setTenants((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   // ── Derived context value ──────────────────────────────────────────
   const value = useMemo<RentalContextValue>(() => {
     const visibleProperties = properties.filter((p) => !p.deleted_at);
@@ -292,6 +328,12 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       getExpensesForProperty,
       getExpensesForMonth,
 
+      tenants,
+      getTenant: (id) => tenants.find((t) => t.id === id),
+      addTenant,
+      updateTenant,
+      deleteTenant,
+
       getPropertyYTD,
       getUnitYTD,
     };
@@ -300,6 +342,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     units,
     revenueEntries,
     expenseEntries,
+    tenants,
     createProperty,
     updateProperty,
     softDeleteProperty,
@@ -310,6 +353,9 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     addExpenseEntry,
     updateExpenseEntry,
     deleteExpenseEntry,
+    addTenant,
+    updateTenant,
+    deleteTenant,
   ]);
 
   return <RentalContext.Provider value={value}>{children}</RentalContext.Provider>;

@@ -239,3 +239,12 @@ body {
     box-shadow: 0 0 0 3px var(--accent-ring);
   }
 }
+
+@media print {
+  body { background: white !important; color: black !important; }
+  .no-print, header, aside, nav, button { display: none !important; }
+  .print-area { padding: 0 !important; }
+  .ui-card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
+  table { font-size: 11px !important; }
+  @page { margin: 14mm; }
+}
