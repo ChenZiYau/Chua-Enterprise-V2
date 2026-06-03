@@ -7,6 +7,7 @@ import type {
   PropertyType,
   RentalModel,
 } from "@/types/rental";
+import { Select } from "@/components/ui/Select";
 
 export type PropertyFormValues = Omit<Property, "id" | "slug">;
 
@@ -79,7 +80,7 @@ export function PropertyForm({
 }: {
   initial?: Partial<PropertyFormValues>;
   submitLabel: string;
-  onSubmit: (values: PropertyFormValues) => void;
+  onSubmit: (values: PropertyFormValues) => void | Promise<void>;
   onCancel?: () => void;
   /** Give the underlying <form> an id so external buttons can submit it via `form={id}`. */
   id?: string;
@@ -92,6 +93,8 @@ export function PropertyForm({
     ...defaultValues(),
     ...initial,
   });
+  const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Snapshot of the initial values used to detect unsaved changes.
   const [initialSnapshot] = useState(() =>
@@ -110,19 +113,27 @@ export function PropertyForm({
     setValues((v) => ({ ...v, [key]: val }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // Clamp rented_units to total_units to prevent invalid states.
     const total = Math.max(0, values.total_units || 0);
     const rented = Math.min(total, Math.max(0, values.rented_units || 0));
-    onSubmit({ ...values, total_units: total, rented_units: rented });
+    setSaving(true);
+    setSubmitError(null);
+    try {
+      await onSubmit({ ...values, total_units: total, rented_units: rented });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not save property to Notion.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const isWhole = values.rental_model === "whole_unit";
 
   return (
     <form id={id} onSubmit={handleSubmit} className="@container flex flex-col gap-10 @lg:gap-12">
-      {/* Rental model — pick visually, this is the most important choice */}
+      {/* Rental model - pick visually, this is the most important choice */}
       <Group eyebrow="Rental model" title="How is this property rented?">
         <div className="grid grid-cols-1 @md:grid-cols-2 gap-3">
           {RENTAL_MODELS.map((m) => {
@@ -181,7 +192,7 @@ export function PropertyForm({
             <input
               className={inputClass}
               style={inputStyle}
-              placeholder="Display alias, e.g. ‘Menjalara’"
+              placeholder="Display alias, e.g. 'Menjalara'"
               value={values.short_name}
               onChange={(e) => set("short_name", e.target.value)}
             />
@@ -237,7 +248,7 @@ export function PropertyForm({
             <input
               className={inputClass}
               style={inputStyle}
-              placeholder="https://…"
+              placeholder="https://..."
               value={values.image_url ?? ""}
               onChange={(e) => set("image_url", e.target.value)}
             />
@@ -249,26 +260,18 @@ export function PropertyForm({
       <Group eyebrow="Classification" title="Type and status">
         <div className="grid grid-cols-1 @lg:grid-cols-2 gap-4 @lg:gap-5">
           <Field label="Property type">
-            <select
-              className="ui-select"
+            <Select
               value={values.property_type}
-              onChange={(e) => set("property_type", e.target.value as PropertyType)}
-            >
-              {PROPERTY_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
+              options={PROPERTY_TYPES}
+              onChange={(value) => set("property_type", value as PropertyType)}
+            />
           </Field>
           <Field label="Status">
-            <select
-              className="ui-select"
+            <Select
               value={values.status}
-              onChange={(e) => set("status", e.target.value as PropertyStatus)}
-            >
-              {STATUSES.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
+              options={STATUSES}
+              onChange={(value) => set("status", value as PropertyStatus)}
+            />
           </Field>
         </div>
       </Group>
@@ -321,19 +324,30 @@ export function PropertyForm({
         Year-to-date totals shown on the property page are calculated from saved entries.
       </p>
 
-      {/* Actions — sticky-feeling footer */}
+      {hideFooter && submitError ? (
+        <p className="text-xs -mt-4" style={{ color: "var(--danger)" }}>
+          {submitError}
+        </p>
+      ) : null}
+
+      {/* Actions - sticky-feeling footer */}
       {!hideFooter && (
         <div
-          className="flex gap-2 justify-end pt-5"
+          className="flex flex-wrap gap-2 justify-end pt-5"
           style={{ borderTop: "1px solid var(--border-soft)" }}
         >
+          {submitError ? (
+            <p className="mr-auto self-center text-xs" style={{ color: "var(--danger)" }}>
+              {submitError}
+            </p>
+          ) : null}
           {onCancel ? (
             <button type="button" className="ui-btn" onClick={onCancel}>
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="ui-btn ui-btn-primary">
-            {submitLabel}
+          <button type="submit" className="ui-btn ui-btn-primary" disabled={saving}>
+            {saving ? "Saving..." : submitLabel}
           </button>
         </div>
       )}

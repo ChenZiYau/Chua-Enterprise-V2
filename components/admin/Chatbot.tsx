@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const SUGGESTIONS = [
-  "Show overdue invoices",
-  "Which room is vacant this month?",
-  "Total revenue for Menjalara",
+  "Which units are vacant?",
+  "How much revenue is outstanding?",
+  "Summarise this month's performance",
 ];
+
+type Msg = { role: "user" | "assistant"; content: string };
 
 export function Chatbot() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   // Esc closes
   useEffect(() => {
@@ -22,14 +28,44 @@ export function Chatbot() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // Auto-scroll to newest message
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
+
+  async function send(text: string) {
+    const content = text.trim();
+    if (!content || loading) return;
+    setError(null);
+    setInput("");
+    const next = [...messages, { role: "user" as const, content }];
+    setMessages(next);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next }),
+      });
+      const data = (await res.json()) as { reply?: string; error?: string };
+      if (!res.ok || !data.reply) {
+        throw new Error(data.error || `Request failed (${res.status})`);
+      }
+      setMessages((m) => [...m, { role: "assistant", content: data.reply! }]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="fixed right-5 bottom-5 z-40 flex flex-col items-end gap-3">
-      {/* Panel */}
       {open ? (
         <section
           role="dialog"
           aria-label="Assistant"
-          className="w-[340px] max-w-[92vw] rounded-2xl flex flex-col overflow-hidden"
+          className="w-[360px] max-w-[92vw] rounded-2xl flex flex-col overflow-hidden"
           style={{
             background: "var(--surface)",
             border: "1px solid var(--border-soft)",
@@ -62,13 +98,20 @@ export function Chatbot() {
                 Assistant
               </p>
               <p className="text-[10px] mt-0.5 inline-flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full"
-                  style={{ background: "var(--success)" }}
-                />
-                Online · Demo
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "var(--success)" }} />
+                Online - grounded in your data
               </p>
             </div>
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setMessages([]); setError(null); }}
+                className="text-[11px] px-2 py-1 rounded-md"
+                style={{ color: "var(--text-muted)", border: "1px solid var(--border-soft)" }}
+              >
+                Clear
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -83,52 +126,52 @@ export function Chatbot() {
           </header>
 
           {/* Body */}
-          <div className="flex-1 px-4 py-4 flex flex-col gap-3 max-h-[360px] overflow-y-auto">
+          <div ref={bodyRef} className="flex-1 px-4 py-4 flex flex-col gap-3 max-h-[400px] overflow-y-auto">
             {/* Greeting bubble */}
-            <div className="flex items-start gap-2.5">
-              <div
-                className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold"
-                style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
-              >
-                AI
-              </div>
-              <div
-                className="text-xs leading-relaxed px-3 py-2.5 rounded-xl rounded-tl-sm max-w-[80%]"
-                style={{
-                  background: "var(--surface-muted)",
-                  color: "var(--text-primary)",
-                  border: "1px solid var(--border-soft)",
-                }}
-              >
-                Hi 👋 I&apos;m your property assistant. Ask me anything about rooms, revenue, or tenants.
-              </div>
-            </div>
+            <Bubble role="assistant">
+              Hi &#128075; I&apos;m your property assistant. Ask me about rooms, revenue, tenants or maintenance.
+            </Bubble>
 
-            {/* Suggestion chips */}
-            <div className="flex flex-col items-start gap-2 mt-1">
-              <p
-                className="text-[10px] uppercase tracking-[0.14em] ml-9"
-                style={{ color: "var(--text-faint)" }}
-              >
-                Try
-              </p>
-              <div className="flex flex-wrap gap-1.5 ml-9">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className="text-[11px] px-2.5 py-1 rounded-full transition"
-                    style={{
-                      border: "1px solid var(--border-soft)",
-                      background: "var(--surface)",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    {s}
-                  </button>
-                ))}
+            {messages.length === 0 && (
+              <div className="flex flex-col items-start gap-2 mt-1">
+                <p className="text-[10px] uppercase tracking-[0.14em] ml-9" style={{ color: "var(--text-faint)" }}>
+                  Try
+                </p>
+                <div className="flex flex-wrap gap-1.5 ml-9">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => send(s)}
+                      className="text-[11px] px-2.5 py-1 rounded-full transition hover:bg-[var(--surface-muted)]"
+                      style={{ border: "1px solid var(--border-soft)", background: "var(--surface)", color: "var(--text-secondary)" }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {messages.map((m, i) => (
+              <Bubble key={i} role={m.role}>
+                {m.content}
+              </Bubble>
+            ))}
+
+            {loading && (
+              <Bubble role="assistant">
+                <span className="inline-flex gap-1">
+                  <Dot /> <Dot delay={0.15} /> <Dot delay={0.3} />
+                </span>
+              </Bubble>
+            )}
+
+            {error && (
+              <p className="text-xs px-3 py-2 rounded-lg" style={{ color: "var(--danger)", background: "rgba(211,84,84,0.10)" }}>
+                {error}
+              </p>
+            )}
           </div>
 
           {/* Composer */}
@@ -137,31 +180,23 @@ export function Chatbot() {
             style={{ borderTop: "1px solid var(--border-soft)", background: "var(--surface-muted)" }}
             onSubmit={(e) => {
               e.preventDefault();
-              setInput("");
+              send(input);
             }}
           >
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything…"
+              placeholder="Ask anything..."
               className="flex-1 px-3 py-2 text-sm rounded-lg outline-none transition"
-              style={{
-                background: "var(--surface)",
-                border: "1px solid var(--border-soft)",
-                color: "var(--text-primary)",
-              }}
+              style={{ background: "var(--surface)", border: "1px solid var(--border-soft)", color: "var(--text-primary)" }}
             />
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!input.trim() || loading}
               aria-label="Send"
               className="w-9 h-9 rounded-lg flex items-center justify-center transition disabled:opacity-40"
-              style={{
-                background: "var(--accent)",
-                color: "#fff",
-                border: "1px solid var(--accent)",
-              }}
+              style={{ background: "var(--accent)", color: "#fff", border: "1px solid var(--accent)" }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 2 11 13" />
@@ -195,11 +230,7 @@ export function Chatbot() {
             </svg>
             <span
               className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full"
-              style={{
-                background: "var(--success)",
-                border: "2px solid var(--surface)",
-                animation: "pulseDot 1.6s ease-in-out infinite",
-              }}
+              style={{ background: "var(--success)", border: "2px solid var(--surface)", animation: "pulseDot 1.6s ease-in-out infinite" }}
             />
           </span>
         )}
@@ -214,7 +245,48 @@ export function Chatbot() {
           0%, 100% { transform: scale(1);   opacity: 1; }
           50%      { transform: scale(1.3); opacity: 0.75; }
         }
+        @keyframes blink {
+          0%, 80%, 100% { opacity: 0.2; }
+          40% { opacity: 1; }
+        }
       `}</style>
     </div>
+  );
+}
+
+function Bubble({ role, children }: { role: "user" | "assistant"; children: React.ReactNode }) {
+  const isUser = role === "user";
+  return (
+    <div className={`flex items-start gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
+      <div
+        className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold"
+        style={
+          isUser
+            ? { background: "var(--accent)", color: "#fff" }
+            : { background: "var(--accent-soft)", color: "var(--accent)" }
+        }
+      >
+        {isUser ? "You" : "AI"}
+      </div>
+      <div
+        className={`text-xs leading-relaxed px-3 py-2.5 rounded-xl max-w-[80%] whitespace-pre-wrap ${isUser ? "rounded-tr-sm" : "rounded-tl-sm"}`}
+        style={{
+          background: isUser ? "var(--accent-soft)" : "var(--surface-muted)",
+          color: "var(--text-primary)",
+          border: "1px solid var(--border-soft)",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Dot({ delay = 0 }: { delay?: number }) {
+  return (
+    <span
+      className="inline-block w-1.5 h-1.5 rounded-full"
+      style={{ background: "var(--text-faint)", animation: `blink 1.2s ${delay}s infinite` }}
+    />
   );
 }

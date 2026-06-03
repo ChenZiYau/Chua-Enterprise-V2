@@ -350,7 +350,7 @@ export function YearlyChart({ data }: { data?: Record<number, number[]> } = {}) 
             );
           })}
 
-          {/* Tooltip — shows all series for the hovered month */}
+          {/* Tooltip - shows all series for the hovered month */}
           {hoverMonth !== null ? (() => {
             const month = hoverMonth;
             const lines = visible.map((s) => ({

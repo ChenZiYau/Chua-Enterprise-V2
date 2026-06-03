@@ -35,6 +35,7 @@ export const DB_IDS = {
   tenants: process.env.NOTION_DB_TENANTS!,
   revenue: process.env.NOTION_DB_REVENUE!,
   expenses: process.env.NOTION_DB_EXPENSES!,
+  maintenance: process.env.NOTION_DB_MAINTENANCE!,
 };
 
 export type Entity = keyof typeof DB_IDS;
@@ -152,7 +153,25 @@ export type RevenueRow = {
   paymentMethod: string;
   paymentStatus: string;
   invoiceGenerated: boolean;
+  invoiceNumber: string;
+  invoiceSent: boolean;
+  invoiceSentAt: string;
   notes: string;
+};
+
+export type MaintenanceRow = {
+  id: string;
+  name: string;
+  property: string;
+  unit: string;
+  tenant: string;
+  category: string;
+  priority: string;
+  status: string;
+  reportedDate: string;
+  dueDate: string;
+  assignedTo: string;
+  description: string;
 };
 
 export type ExpenseRow = {
@@ -243,6 +262,9 @@ export async function getRevenue(): Promise<RevenueRow[]> {
     paymentMethod: txt(r.properties["Payment Method"]),
     paymentStatus: txt(r.properties["Payment Status"]),
     invoiceGenerated: bool(r.properties["Invoice Generated"]),
+    invoiceNumber: txt(r.properties["Invoice Number"]),
+    invoiceSent: bool(r.properties["Invoice Sent"]),
+    invoiceSentAt: dateStr(r.properties["Invoice Sent At"]),
     notes: txt(r.properties["Notes"]),
   }));
 }
@@ -263,4 +285,242 @@ export async function getExpenses(): Promise<ExpenseRow[]> {
     isRecurring: bool(r.properties["Is Recurring"]),
     isIrregular: bool(r.properties["Is Irregular"]),
   }));
+}
+
+export async function getMaintenance(): Promise<MaintenanceRow[]> {
+  const rows = await queryAll(DB_IDS.maintenance);
+  return rows.map(mapMaintenanceRow);
+}
+
+function mapMaintenanceRow(r: NotionPage): MaintenanceRow {
+  return {
+    id: r.id,
+    name: txt(r.properties["Name"]),
+    property: txt(r.properties["Property"]),
+    unit: txt(r.properties["Unit"]),
+    tenant: txt(r.properties["Tenant"]),
+    category: txt(r.properties["Category"]),
+    priority: txt(r.properties["Priority"]),
+    status: txt(r.properties["Status"]),
+    reportedDate: dateStr(r.properties["Reported Date"]),
+    dueDate: dateStr(r.properties["Due Date"]),
+    assignedTo: txt(r.properties["Assigned To"]),
+    description: txt(r.properties["Description"]),
+  };
+}
+
+// ------------------------- WRITE LAYER -------------------------
+// All inter-database links in this workspace are stored as plain
+// rich_text names (not Notion relations), so writes only build text /
+// number / select / date / checkbox property payloads.
+
+type PropValue =
+  | { title: Array<{ text: { content: string } }> }
+  | { rich_text: Array<{ text: { content: string } }> }
+  | { number: number | null }
+  | { select: { name: string } | null }
+  | { checkbox: boolean }
+  | { url: string | null }
+  | { email: string | null }
+  | { phone_number: string | null }
+  | { date: { start: string } | null };
+
+function pTitle(v: string): PropValue {
+  return { title: [{ text: { content: v || "Untitled" } }] };
+}
+function pText(v: string | null | undefined): PropValue {
+  return { rich_text: v ? [{ text: { content: v } }] : [] };
+}
+function pNum(v: number | null | undefined): PropValue {
+  return { number: v == null || Number.isNaN(v) ? null : v };
+}
+function pSelect(v: string | null | undefined): PropValue {
+  return { select: v ? { name: v } : null };
+}
+function pCheck(v: boolean): PropValue {
+  return { checkbox: !!v };
+}
+function pDate(v: string | null | undefined): PropValue {
+  return { date: v ? { start: v } : null };
+}
+function pUrl(v: string | null | undefined): PropValue {
+  return { url: v || null };
+}
+
+async function createPage(
+  databaseId: string,
+  properties: Record<string, PropValue>
+): Promise<string> {
+  const r = await fetch(`${NOTION_API}/pages`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ parent: { database_id: databaseId }, properties }),
+  });
+  if (!r.ok) throw new Error(`Notion create failed: ${r.status} ${await r.text()}`);
+  const data = (await r.json()) as { id: string };
+  return data.id;
+}
+
+async function updatePage(
+  pageId: string,
+  properties: Record<string, PropValue>
+): Promise<void> {
+  const r = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ properties }),
+  });
+  if (!r.ok) throw new Error(`Notion update failed: ${r.status} ${await r.text()}`);
+}
+
+async function archivePage(pageId: string): Promise<void> {
+  const r = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ archived: true }),
+  });
+  if (!r.ok) throw new Error(`Notion archive failed: ${r.status} ${await r.text()}`);
+}
+
+// ---- per-entity property builders (partial-aware) ----
+type AnyFields = Record<string, unknown>;
+
+function has(f: AnyFields, k: string) {
+  return Object.prototype.hasOwnProperty.call(f, k);
+}
+
+function buildMaintenanceProps(f: AnyFields): Record<string, PropValue> {
+  const p: Record<string, PropValue> = {};
+  if (has(f, "name")) p["Name"] = pTitle(String(f.name ?? ""));
+  if (has(f, "property")) p["Property"] = pText(f.property as string);
+  if (has(f, "unit")) p["Unit"] = pText(f.unit as string);
+  if (has(f, "tenant")) p["Tenant"] = pText(f.tenant as string);
+  if (has(f, "category")) p["Category"] = pSelect(f.category as string);
+  if (has(f, "priority")) p["Priority"] = pSelect(f.priority as string);
+  if (has(f, "status")) p["Status"] = pSelect(f.status as string);
+  if (has(f, "reportedDate")) p["Reported Date"] = pDate(f.reportedDate as string);
+  if (has(f, "dueDate")) p["Due Date"] = pDate(f.dueDate as string);
+  if (has(f, "assignedTo")) p["Assigned To"] = pText(f.assignedTo as string);
+  if (has(f, "description")) p["Description"] = pText(f.description as string);
+  return p;
+}
+
+function buildRevenueProps(f: AnyFields): Record<string, PropValue> {
+  const p: Record<string, PropValue> = {};
+  if (has(f, "name")) p["Name"] = pTitle(String(f.name ?? ""));
+  if (has(f, "property")) p["Property"] = pText(f.property as string);
+  if (has(f, "unit")) p["Unit"] = pText(f.unit as string);
+  if (has(f, "year")) p["Year"] = pNum(f.year as number);
+  if (has(f, "month")) p["Month"] = pNum(f.month as number);
+  if (has(f, "rentalAmount")) p["Rental Amount"] = pNum(f.rentalAmount as number);
+  if (has(f, "electricityUnits")) p["Electricity Units"] = pNum(f.electricityUnits as number);
+  if (has(f, "electricityAmount")) p["Electricity Amount"] = pNum(f.electricityAmount as number);
+  if (has(f, "otherCharges")) p["Other Charges"] = pNum(f.otherCharges as number);
+  if (has(f, "totalAmount")) p["Total Amount"] = pNum(f.totalAmount as number);
+  if (has(f, "paymentDate")) p["Payment Date"] = pDate(f.paymentDate as string);
+  if (has(f, "paymentMethod")) p["Payment Method"] = pSelect(f.paymentMethod as string);
+  if (has(f, "paymentStatus")) p["Payment Status"] = pSelect(f.paymentStatus as string);
+  if (has(f, "invoiceGenerated")) p["Invoice Generated"] = pCheck(!!f.invoiceGenerated);
+  if (has(f, "invoiceNumber")) p["Invoice Number"] = pText(f.invoiceNumber as string);
+  if (has(f, "invoiceSent")) p["Invoice Sent"] = pCheck(!!f.invoiceSent);
+  if (has(f, "invoiceSentAt")) p["Invoice Sent At"] = pDate(f.invoiceSentAt as string);
+  if (has(f, "notes")) p["Notes"] = pText(f.notes as string);
+  return p;
+}
+
+function buildPropertyProps(f: AnyFields): Record<string, PropValue> {
+  const p: Record<string, PropValue> = {};
+  if (has(f, "name")) p["Name"] = pTitle(String(f.name ?? ""));
+  if (has(f, "slug")) p["Slug"] = pText(f.slug as string);
+  if (has(f, "shortName")) p["Short Name"] = pText(f.shortName as string);
+  if (has(f, "address")) p["Address"] = pText(f.address as string);
+  if (has(f, "city")) p["City"] = pText(f.city as string);
+  if (has(f, "state")) p["State"] = pText(f.state as string);
+  if (has(f, "postcode")) p["Postcode"] = pText(f.postcode as string);
+  if (has(f, "rentalModel")) p["Rental Model"] = pSelect(f.rentalModel as string);
+  if (has(f, "propertyType")) p["Property Type"] = pSelect(f.propertyType as string);
+  if (has(f, "status")) p["Status"] = pSelect(f.status as string);
+  if (has(f, "imageUrl")) p["Image URL"] = pUrl(f.imageUrl as string);
+  if (has(f, "description")) p["Description"] = pText(f.description as string);
+  if (has(f, "totalUnits")) p["Total Units"] = pNum(f.totalUnits as number);
+  if (has(f, "rentedUnits")) p["Rented Units"] = pNum(f.rentedUnits as number);
+  if (has(f, "ytdRevenue")) p["YTD Revenue"] = pNum(f.ytdRevenue as number);
+  if (has(f, "ytdExpenses")) p["YTD Expenses"] = pNum(f.ytdExpenses as number);
+  return p;
+}
+
+function buildUnitProps(f: AnyFields): Record<string, PropValue> {
+  const p: Record<string, PropValue> = {};
+  if (has(f, "name")) p["Name"] = pTitle(String(f.name ?? ""));
+  if (has(f, "property")) p["Property"] = pText(f.property as string);
+  if (has(f, "label")) p["Label"] = pText(f.label as string);
+  if (has(f, "sortOrder")) p["Sort Order"] = pNum(f.sortOrder as number);
+  if (has(f, "isRented")) p["Is Rented"] = pCheck(!!f.isRented);
+  if (has(f, "tenantName")) p["Tenant Name"] = pText(f.tenantName as string);
+  if (has(f, "rentalRate")) p["Rental Rate"] = pNum(f.rentalRate as number);
+  if (has(f, "electricityFreeUnits")) p["Electricity Free Units"] = pNum(f.electricityFreeUnits as number);
+  return p;
+}
+
+function buildExpenseProps(f: AnyFields): Record<string, PropValue> {
+  const p: Record<string, PropValue> = {};
+  if (has(f, "name")) p["Name"] = pTitle(String(f.name ?? ""));
+  if (has(f, "property")) p["Property"] = pText(f.property as string);
+  if (has(f, "year")) p["Year"] = pNum(f.year as number);
+  if (has(f, "month")) p["Month"] = pNum(f.month as number);
+  if (has(f, "expenseDate")) p["Expense Date"] = pDate(f.expenseDate as string);
+  if (has(f, "category")) p["Category"] = pSelect(f.category as string);
+  if (has(f, "customCategory")) p["Custom Category"] = pText(f.customCategory as string);
+  if (has(f, "amount")) p["Amount"] = pNum(f.amount as number);
+  if (has(f, "description")) p["Description"] = pText(f.description as string);
+  if (has(f, "isRecurring")) p["Is Recurring"] = pCheck(!!f.isRecurring);
+  if (has(f, "isIrregular")) p["Is Irregular"] = pCheck(!!f.isIrregular);
+  return p;
+}
+
+function buildTenantProps(f: AnyFields): Record<string, PropValue> {
+  const p: Record<string, PropValue> = {};
+  if (has(f, "name")) p["Name"] = pTitle(String(f.name ?? ""));
+  if (has(f, "icNumber")) p["IC Number"] = pText(f.icNumber as string);
+  if (has(f, "email")) p["Email"] = emailProp(f.email as string);
+  if (has(f, "phone")) p["Phone"] = phoneProp(f.phone as string);
+  if (has(f, "previousAddress")) p["Previous Address"] = pText(f.previousAddress as string);
+  if (has(f, "unit")) p["Unit"] = pText(f.unit as string);
+  if (has(f, "property")) p["Property"] = pText(f.property as string);
+  if (has(f, "leaseStart")) p["Lease Start"] = pDate(f.leaseStart as string);
+  if (has(f, "leaseEnd")) p["Lease End"] = pDate(f.leaseEnd as string);
+  if (has(f, "notes")) p["Notes"] = pText(f.notes as string);
+  return p;
+}
+
+function emailProp(v: string | null | undefined): PropValue {
+  return { email: v || null } as unknown as PropValue;
+}
+function phoneProp(v: string | null | undefined): PropValue {
+  return { phone_number: v || null } as unknown as PropValue;
+}
+
+const BUILDERS: Record<string, (f: AnyFields) => Record<string, PropValue>> = {
+  properties: buildPropertyProps,
+  units: buildUnitProps,
+  maintenance: buildMaintenanceProps,
+  revenue: buildRevenueProps,
+  expenses: buildExpenseProps,
+  tenants: buildTenantProps,
+};
+
+export async function createEntity(entity: Entity, fields: AnyFields): Promise<string> {
+  const builder = BUILDERS[entity];
+  if (!builder) throw new Error(`No write builder for entity "${entity}"`);
+  return createPage(DB_IDS[entity], builder(fields));
+}
+
+export async function updateEntity(entity: Entity, id: string, fields: AnyFields): Promise<void> {
+  const builder = BUILDERS[entity];
+  if (!builder) throw new Error(`No write builder for entity "${entity}"`);
+  await updatePage(id, builder(fields));
+}
+
+export async function deleteEntity(id: string): Promise<void> {
+  await archivePage(id);
 }

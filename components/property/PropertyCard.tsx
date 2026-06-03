@@ -10,7 +10,7 @@ import {
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
 
 function formatMYR(value: number | undefined) {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null) return "-";
   return new Intl.NumberFormat("en-MY", {
     style: "currency",
     currency: "MYR",

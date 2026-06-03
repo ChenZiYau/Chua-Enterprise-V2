@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Select } from "@/components/ui/Select";
 import {
   MONTHS,
   MONTHS_FULL,
@@ -11,6 +13,7 @@ import {
   type PaymentStatus,
   type RevenueEntry,
 } from "@/types/rental";
+import { todayIso } from "@/lib/date";
 
 const CUR_YEAR = new Date().getFullYear();
 
@@ -42,16 +45,55 @@ const STATUS_COLORS: Record<PaymentStatus, { bg: string; text: string }> = {
   overdue: { bg: "rgba(211,84,84,0.10)", text: "var(--danger)" },
 };
 
-function invoiceNumber(e: RevenueEntry) {
+function makeInvoiceNumber(e: RevenueEntry) {
   const mm = String(e.month).padStart(2, "0");
   const suffix = e.unit_id.slice(-4).toUpperCase();
   return `INV-${e.year}${mm}-${suffix}`;
+}
+
+function invoiceNumber(e: RevenueEntry) {
+  return e.invoice_number || makeInvoiceNumber(e);
+}
+
+function pdfText(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function downloadPdf(filename: string, lines: string[]) {
+  const content = lines
+    .map((line, index) => `BT /F1 11 Tf 50 ${760 - index * 18} Td (${pdfText(line)}) Tj ET`)
+    .join("\n");
+  const objects = [
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
+    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
+    `5 0 obj << /Length ${content.length} >> stream\n${content}\nendstream endobj`,
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(body.length);
+    body += `${object}\n`;
+  }
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  body += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+
+  const url = URL.createObjectURL(new Blob([body], { type: "application/pdf" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function InvoicesPage() {
   const {
     revenueEntries,
     visibleProperties,
+    tenants,
     getUnit,
     updateRevenueEntry,
   } = useRental();
@@ -66,6 +108,9 @@ export default function InvoicesPage() {
     "all"
   );
   const [viewing, setViewing] = useState<RevenueEntry | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const confirm = useConfirm();
 
   const unitOptions =
     filterProp === "all"
@@ -137,21 +182,127 @@ export default function InvoicesPage() {
     .filter((e) => e.payment_status !== "paid")
     .reduce((s, e) => s + e.total_amount, 0);
 
-  function bulkGenerate() {
+  async function bulkGenerate() {
     const pending = filtered.filter((e) => !e.invoice_generated);
     if (pending.length === 0) {
-      alert("No ungenerated invoices in the current view.");
+      await confirm({
+        title: "Nothing to generate",
+        message: "There are no ungenerated invoices in the current view.",
+        confirmLabel: "OK",
+        cancelLabel: "Close",
+      });
       return;
     }
-    if (
-      !confirm(
-        `Mark ${pending.length} invoice${pending.length === 1 ? "" : "s"} as generated?`
-      )
-    )
+    const { confirmed } = await confirm({
+      title: "Generate invoices",
+      message: `Mark ${pending.length} invoice${pending.length === 1 ? "" : "s"} as generated? This is saved back to Notion.`,
+      confirmLabel: "Generate",
+    });
+    if (!confirmed) return;
+    setWorking(true);
+    setActionError(null);
+    try {
+      await Promise.all(
+        pending.map((e) =>
+          updateRevenueEntry(e.id, {
+            invoice_generated: true,
+            invoice_number: invoiceNumber(e),
+          })
+        )
+      );
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not generate invoices in Notion.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function propertyName(entry: RevenueEntry) {
+    return visibleProperties.find((p) => p.id === entry.property_id)?.name ?? entry.property_id;
+  }
+
+  function tenantFor(entry: RevenueEntry) {
+    return tenants.find((tenant) => tenant.unit_id === entry.unit_id);
+  }
+
+  async function downloadInvoice(entry: RevenueEntry) {
+    const unit = getUnit(entry.unit_id);
+    const prop = visibleProperties.find((p) => p.id === entry.property_id);
+    const number = invoiceNumber(entry);
+    setActionError(null);
+    try {
+      await updateRevenueEntry(entry.id, {
+        invoice_generated: true,
+        invoice_number: number,
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not save invoice number to Notion.");
       return;
-    pending.forEach((e) =>
-      updateRevenueEntry(e.id, { invoice_generated: true })
-    );
+    }
+    downloadPdf(`${number}.pdf`, [
+      `Invoice ${number}`,
+      "",
+      `Bill To: ${unit?.tenant_name ?? "-"}`,
+      `Property: ${prop?.name ?? entry.property_id}`,
+      `Address: ${prop?.address ?? "-"}`,
+      `Unit: ${unit?.name ?? entry.unit_id}`,
+      `Billing Period: ${MONTHS_FULL[entry.month - 1]} ${entry.year}`,
+      "",
+      `Rental: ${fmt(entry.rental_amount)}`,
+      `Electricity: ${fmt(entry.electricity_amount ?? 0)}`,
+      `Other Charges: ${fmt(entry.other_charges_amount ?? 0)}`,
+      `Total: ${fmt(entry.total_amount)}`,
+      `Payment Status: ${PAYMENT_STATUS_LABEL[entry.payment_status ?? "pending"]}`,
+      "",
+      entry.notes ? `Notes: ${entry.notes}` : "",
+    ].filter(Boolean));
+  }
+
+  async function sendInvoice(entry: RevenueEntry) {
+    const tenant = tenantFor(entry);
+    const unit = getUnit(entry.unit_id);
+    const number = invoiceNumber(entry);
+    const { confirmed } = await confirm({
+      title: tenant?.email ? "Send invoice" : "No tenant email",
+      message: tenant?.email
+        ? `Open an email draft for ${tenant.email}? You will confirm sent status after sending.`
+        : "This unit does not have a tenant email in Notion. Mark the invoice as sent only after sending it manually?",
+      confirmLabel: tenant?.email ? "Open draft" : "Mark sent",
+    });
+    if (!confirmed) return;
+    setActionError(null);
+    try {
+      await updateRevenueEntry(entry.id, {
+        invoice_generated: true,
+        invoice_number: number,
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not save invoice number to Notion.");
+      return;
+    }
+    if (tenant?.email) {
+      const subject = encodeURIComponent(`Invoice ${number} - ${MONTHS_FULL[entry.month - 1]} ${entry.year}`);
+      const body = encodeURIComponent(
+        `Hi ${tenant.name},\n\nPlease find invoice ${number} for ${unit?.name ?? "your unit"}.\n\nTotal amount: ${fmt(entry.total_amount)}\n\nThank you.`
+      );
+      window.location.href = `mailto:${tenant.email}?subject=${subject}&body=${body}`;
+      const sent = await confirm({
+        title: "Mark invoice as sent?",
+        message: `Only mark ${number} as sent after you sent the email draft.`,
+        confirmLabel: "Mark sent",
+      });
+      if (!sent.confirmed) return;
+    }
+    try {
+      await updateRevenueEntry(entry.id, {
+        invoice_generated: true,
+        invoice_number: number,
+        invoice_sent: true,
+        invoice_sent_at: todayIso(),
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not mark invoice as sent in Notion.");
+    }
   }
 
   return (
@@ -173,10 +324,18 @@ export default function InvoicesPage() {
           type="button"
           className="ui-btn ui-btn-primary"
           onClick={bulkGenerate}
+          disabled={working}
         >
-          + Generate Invoices
+          {working ? "Generating..." : "+ Generate Invoices"}
         </button>
       </div>
+
+      {actionError && (
+        <div className="ui-card px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: "var(--danger)", background: "rgba(211,84,84,0.08)" }}>
+          <p className="text-sm" style={{ color: "var(--danger)" }}>{actionError}</p>
+          <button type="button" className="ui-btn" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
@@ -199,65 +358,63 @@ export default function InvoicesPage() {
         <input
           type="search"
           className="ui-input w-auto min-w-[200px] flex-1 max-w-[260px]"
-          placeholder="Search invoice #, property, unit, tenant…"
+          placeholder="Search invoice #, property, unit, tenant..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        <select
-          className="ui-select w-auto min-w-[160px]"
+        <Select
+          className="w-auto min-w-[160px]"
+          ariaLabel="Filter by property"
           value={filterProp}
-          onChange={(e) => {
-            setFilterProp(e.target.value);
+          onChange={(v) => {
+            setFilterProp(v);
             setFilterUnit("all");
           }}
-        >
-          <option value="all">All Properties</option>
-          {visibleProperties.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "all", label: "All Properties" },
+            ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
 
         {filterProp !== "all" && unitOptions.length > 0 && (
-          <select
-            className="ui-select w-auto min-w-[140px]"
+          <Select
+            className="w-auto min-w-[140px]"
+            ariaLabel="Filter by unit"
             value={filterUnit}
-            onChange={(e) => setFilterUnit(e.target.value)}
-          >
-            <option value="all">All Units</option>
-            {unitOptions.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterUnit}
+            options={[
+              { value: "all", label: "All Units" },
+              ...unitOptions.map((u) => ({ value: u.id, label: u.name })),
+            ]}
+          />
         )}
 
-        <select
-          className="ui-select w-auto min-w-[130px]"
+        <Select
+          className="w-auto min-w-[130px]"
+          ariaLabel="Filter by status"
           value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-        >
-          <option value="all">All Statuses</option>
-          <option value="paid">Paid</option>
-          <option value="partial">Partial</option>
-          <option value="pending">Pending</option>
-          <option value="overdue">Overdue</option>
-        </select>
+          onChange={setFilterStatus}
+          options={[
+            { value: "all", label: "All Statuses" },
+            { value: "paid", label: "Paid" },
+            { value: "partial", label: "Partial" },
+            { value: "pending", label: "Pending" },
+            { value: "overdue", label: "Overdue" },
+          ]}
+        />
 
-        <select
-          className="ui-select w-auto min-w-[150px]"
+        <Select
+          className="w-auto min-w-[150px]"
+          ariaLabel="Filter by invoice state"
           value={filterGenerated}
-          onChange={(e) =>
-            setFilterGenerated(e.target.value as "all" | "yes" | "no")
-          }
-        >
-          <option value="all">All Invoices</option>
-          <option value="yes">Generated</option>
-          <option value="no">Not Generated</option>
-        </select>
+          onChange={(v) => setFilterGenerated(v as "all" | "yes" | "no")}
+          options={[
+            { value: "all", label: "All Invoices" },
+            { value: "yes", label: "Generated" },
+            { value: "no", label: "Not Generated" },
+          ]}
+        />
 
         <div className="ml-auto flex items-center gap-4 text-sm font-semibold">
           <span style={{ color: "var(--danger)" }}>
@@ -273,7 +430,7 @@ export default function InvoicesPage() {
       {filtered.length === 0 ? (
         <div className="ui-card p-12 text-center">
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            No invoices found. Enter rental revenue first — invoices are
+            No invoices found. Enter rental revenue first - invoices are
             generated from revenue entries.
           </p>
         </div>
@@ -305,6 +462,9 @@ export default function InvoicesPage() {
                 </th>
                 <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
                   Invoice
+                </th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
+                  Delivery
                 </th>
                 <th className="px-4 py-3" />
               </tr>
@@ -348,7 +508,7 @@ export default function InvoicesPage() {
                       className="px-4 py-3"
                       style={{ color: "var(--text-secondary)" }}
                     >
-                      {unit?.tenant_name ?? "—"}
+                      {unit?.tenant_name ?? "-"}
                     </td>
                     <td
                       className="px-4 py-3"
@@ -376,10 +536,19 @@ export default function InvoicesPage() {
                     <td className="px-4 py-3 text-center">
                       {entry.invoice_generated ? (
                         <span className="ui-chip ui-chip-success text-xs">
-                          ✓ Generated
+                          &#10003; Generated
                         </span>
                       ) : (
                         <span className="ui-chip text-xs">Pending</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {entry.invoice_sent ? (
+                        <span className="ui-chip ui-chip-success text-xs">
+                          Sent{entry.invoice_sent_at ? ` ${entry.invoice_sent_at}` : ""}
+                        </span>
+                      ) : (
+                        <span className="ui-chip text-xs">Not sent</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -407,11 +576,42 @@ export default function InvoicesPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            updateRevenueEntry(entry.id, {
-                              invoice_generated: !entry.invoice_generated,
-                            })
-                          }
+                          onClick={() => downloadInvoice(entry)}
+                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          title="Download PDF"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <path d="M7 10l5 5 5-5" />
+                            <path d="M12 15V3" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendInvoice(entry)}
+                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          title="Send invoice"
+                          style={{ color: entry.invoice_sent ? "var(--success)" : "var(--text-muted)" }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 2 11 13" />
+                            <path d="m22 2-7 20-4-9-9-4Z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setActionError(null);
+                            try {
+                              await updateRevenueEntry(entry.id, {
+                                invoice_generated: !entry.invoice_generated,
+                                invoice_number: entry.invoice_generated ? null : invoiceNumber(entry),
+                              });
+                            } catch (err) {
+                              setActionError(err instanceof Error ? err.message : "Could not update invoice in Notion.");
+                            }
+                          }}
                           className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
                           title={
                             entry.invoice_generated
@@ -477,7 +677,7 @@ export default function InvoicesPage() {
                 >
                   {fmt(totalBilled)}
                 </td>
-                <td colSpan={3} />
+                <td colSpan={4} />
               </tr>
             </tfoot>
           </table>
@@ -487,6 +687,8 @@ export default function InvoicesPage() {
       {viewing && (
         <InvoiceViewModal
           entry={viewing}
+          onDownload={() => downloadInvoice(viewing)}
+          onSend={() => sendInvoice(viewing)}
           onClose={() => setViewing(null)}
         />
       )}
@@ -496,9 +698,13 @@ export default function InvoicesPage() {
 
 function InvoiceViewModal({
   entry,
+  onDownload,
+  onSend,
   onClose,
 }: {
   entry: RevenueEntry;
+  onDownload: () => void;
+  onSend: () => void;
   onClose: () => void;
 }) {
   const { getProperty, getUnit } = useRental();
@@ -558,7 +764,7 @@ function InvoiceViewModal({
                 className="font-medium"
                 style={{ color: "var(--text-primary)" }}
               >
-                {unit?.tenant_name ?? "—"}
+                {unit?.tenant_name ?? "-"}
               </p>
               <p style={{ color: "var(--text-muted)" }}>
                 {unit?.name ?? entry.unit_id}
@@ -719,10 +925,17 @@ function InvoiceViewModal({
         >
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={onDownload}
             className="ui-btn"
           >
-            Print
+            Download PDF
+          </button>
+          <button
+            type="button"
+            onClick={onSend}
+            className="ui-btn"
+          >
+            {entry.invoice_sent ? "Send Again" : "Send"}
           </button>
           <button
             type="button"

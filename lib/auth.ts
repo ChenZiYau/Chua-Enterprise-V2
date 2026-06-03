@@ -1,5 +1,5 @@
 /** Tiny client-side auth helpers backed by localStorage.
- *  Not real auth — just gates the admin routes so logout actually does
+ *  Not real auth - just gates the admin routes so logout actually does
  *  something and the login page is the first stop. */
 
 const KEY = "chua.auth";

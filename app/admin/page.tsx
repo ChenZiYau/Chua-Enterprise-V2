@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { OverviewCard } from "@/components/admin/OverviewCard";
 import { YearlyChart } from "@/components/admin/YearlyChart";
-import { RecentPayments } from "@/components/admin/RecentPayments";
+import { RecentPayments, type RecentPayment } from "@/components/admin/RecentPayments";
 import {
   getProperties,
   getRevenue,
@@ -63,7 +64,7 @@ type Activity = {
 };
 
 function timeAgo(iso: string): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const diff = Date.now() - d.getTime();
@@ -89,7 +90,7 @@ function buildActivity(revenue: RevenueRow[], expenses: ExpenseRow[]): Activity[
           ? "danger"
           : "warning";
     items.push({
-      who: r.unit ? `${r.property} · ${r.unit}` : r.property,
+      who: r.unit ? `${r.property} - ${r.unit}` : r.property,
       what: r.paymentStatus === "paid" ? "Rent payment received" : `Payment ${r.paymentStatus}`,
       when: timeAgo(r.paymentDate),
       amount: `+${fmtMYR(r.totalAmount)}`,
@@ -113,13 +114,63 @@ function buildActivity(revenue: RevenueRow[], expenses: ExpenseRow[]): Activity[
   return items.sort((a, b) => b.ts - a.ts).slice(0, 5);
 }
 
+function buildRecentPayments(revenue: RevenueRow[], units: UnitRow[]): RecentPayment[] {
+  const tenantByUnit = new Map<string, string>();
+  for (const u of units) {
+    if (u.tenantName) tenantByUnit.set(`${u.property}|${u.name}`, u.tenantName);
+  }
+  return revenue
+    .filter((r) => r.paymentStatus === "paid" && r.paymentDate)
+    .map((r) => ({ r, ts: new Date(r.paymentDate).getTime() }))
+    .filter((x) => !Number.isNaN(x.ts))
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 6)
+    .map(({ r, ts }) => ({
+      id: r.id,
+      name: tenantByUnit.get(`${r.property}|${r.unit}`) || (r.unit ? `${r.property} - ${r.unit}` : r.property),
+      amount: r.totalAmount,
+      unit: r.unit ? `${r.property} - ${r.unit}` : r.property,
+      when: timeAgo(new Date(ts).toISOString()),
+    }));
+}
+
 export default async function AdminOverviewPage() {
-  const [properties, units, revenue, expenses] = await Promise.all([
-    getProperties(),
-    getUnits(),
-    getRevenue(),
-    getExpenses(),
-  ]);
+  let properties: PropertyRow[] = [];
+  let units: UnitRow[] = [];
+  let revenue: RevenueRow[] = [];
+  let expenses: ExpenseRow[] = [];
+  let loadError: string | null = null;
+
+  try {
+    [properties, units, revenue, expenses] = await Promise.all([
+      getProperties(),
+      getUnits(),
+      getRevenue(),
+      getExpenses(),
+    ]);
+  } catch (e) {
+    loadError = e instanceof Error ? e.message : String(e);
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="ui-card p-12 text-center max-w-xl mx-auto">
+          <p className="text-base font-semibold" style={{ color: "var(--danger)" }}>
+            Couldn&apos;t load the dashboard from Notion.
+          </p>
+          <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
+            {loadError}
+          </p>
+          <p className="text-xs mt-4" style={{ color: "var(--text-faint)" }}>
+            Check the Notion integration token and database sharing, then refresh.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const recentPayments = buildRecentPayments(revenue, units);
 
   const totalRevenue = revenue.reduce((a, r) => a + r.totalAmount, 0);
   const totalExpenses = expenses.reduce((a, e) => a + e.amount, 0);
@@ -144,7 +195,7 @@ export default async function AdminOverviewPage() {
     {
       label: "Net Profit",
       value: fmtMYR(netProfit),
-      hint: "Revenue − Expenses",
+      hint: "Revenue - Expenses",
       trend: (netProfit >= 0 ? "up" : "down") as "up" | "down",
     },
     {
@@ -204,9 +255,9 @@ export default async function AdminOverviewPage() {
               <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                 Recent Activity
               </h3>
-              <button className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+              <Link href="/admin/reports" className="text-xs font-medium" style={{ color: "var(--accent)" }}>
                 View all
-              </button>
+              </Link>
             </div>
             <ul className="flex flex-col gap-4">
               {activity.length === 0 ? (
@@ -228,7 +279,7 @@ export default async function AdminOverviewPage() {
                         {a.who}
                       </p>
                       <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
-                        {a.what} · {a.when}
+                        {a.what} - {a.when}
                       </p>
                     </div>
                     <span
@@ -254,9 +305,9 @@ export default async function AdminOverviewPage() {
               <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                 Property Summary
               </h3>
-              <button className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+              <Link href="/admin/properties" className="text-xs font-medium" style={{ color: "var(--accent)" }}>
                 Manage
-              </button>
+              </Link>
             </div>
             <div className="overflow-x-auto -mx-1 px-1">
               <table className="w-full text-sm">
@@ -366,7 +417,7 @@ export default async function AdminOverviewPage() {
           </ul>
         </div>
 
-        <RecentPayments />
+        <RecentPayments payments={recentPayments} />
       </aside>
     </div>
   );

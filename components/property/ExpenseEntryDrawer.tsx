@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
+import { Select } from "@/components/ui/Select";
 import {
   MONTHS_FULL,
   EXPENSE_CATEGORIES,
@@ -45,7 +46,7 @@ export function ExpenseEntryDrawer({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Optional — when omitted the drawer shows a property picker (e.g. from the Expenses ledger). */
+  /** Optional - when omitted the drawer shows a property picker (e.g. from the Expenses ledger). */
   propertyName?: string;
   propertyId?: string;
 }) {
@@ -55,6 +56,8 @@ export function ExpenseEntryDrawer({
   const [view, setView] = useState<View>("normal");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // When a propertyId is provided it is locked; otherwise the user picks one.
   const lockProperty = !!propertyId;
@@ -76,6 +79,8 @@ export function ExpenseEntryDrawer({
       setView("normal");
       setConfirmOpen(false);
       setSavedCount(0);
+      setSaving(false);
+      setSaveError(null);
       setSelectedProperty(propertyId ?? "");
       setYear(now.getFullYear());
       setMonthIdx(now.getMonth());
@@ -131,32 +136,40 @@ export function ExpenseEntryDrawer({
     setItems((prev) => (prev.length === 1 ? [newItem()] : prev.filter((it) => it.key !== key)));
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!canSave) return;
     const month = monthIdx + 1;
     const date = todayISO();
-    validItems.forEach((it) => {
-      const desc = it.description.trim() || null;
-      addExpenseEntry({
-        property_id: activePropertyId,
-        year,
-        month,
-        expense_date: date,
-        category: it.category,
-        custom_category: it.category === "other" ? desc : null,
-        amount: parseFloat(it.amount) || 0,
-        description: desc,
-        is_recurring: false,
-        is_irregular: false,
-      });
-    });
-    setSavedCount(validItems.length);
-    setTimeout(() => onClose(), 700);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      for (const it of validItems) {
+        const desc = it.description.trim() || null;
+        await addExpenseEntry({
+          property_id: activePropertyId,
+          year,
+          month,
+          expense_date: date,
+          category: it.category,
+          custom_category: it.category === "other" ? desc : null,
+          amount: parseFloat(it.amount) || 0,
+          description: desc,
+          is_recurring: false,
+          is_irregular: false,
+        });
+      }
+      setSavedCount(validItems.length);
+      setTimeout(() => onClose(), 700);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save expenses to Notion.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!open) return null;
 
-  // ── Minimized floating bar ──
+  // -- Minimized floating bar --
   if (view === "minimized") {
     return (
       <div
@@ -171,7 +184,7 @@ export function ExpenseEntryDrawer({
       >
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-            Adding expenses{dirty ? " · unsaved" : ""}
+            Adding expenses{dirty ? " - unsaved" : ""}
           </p>
           <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
             {activePropertyName}
@@ -180,9 +193,6 @@ export function ExpenseEntryDrawer({
         <div className="flex items-center gap-1.5 shrink-0">
           <button type="button" onClick={() => setView("normal")} className="ui-btn" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}>
             Restore
-          </button>
-          <button type="button" onClick={attemptClose} aria-label="Close" className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: "var(--text-muted)", border: "1px solid var(--border-soft)" }}>
-            <CloseIcon />
           </button>
         </div>
         {confirmOpen && (
@@ -209,13 +219,13 @@ export function ExpenseEntryDrawer({
         <header className="px-6 py-5 flex items-start justify-between gap-4" style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-              Add expenses{dirty ? " · unsaved" : ""}
+              Add expenses{dirty ? " - unsaved" : ""}
             </p>
             <h2 id="expense-drawer-title" className="text-lg font-semibold mt-1 truncate" style={{ color: "var(--text-primary)" }}>
               {activePropertyName}
             </h2>
             <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-              List everything you paid for this month — one line each.
+              List everything you paid for this month - one line each.
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -223,33 +233,38 @@ export function ExpenseEntryDrawer({
             <IconBtn label={view === "expanded" ? "Collapse" : "Expand"} onClick={() => setView(view === "expanded" ? "normal" : "expanded")}>
               {view === "expanded" ? <CollapseIcon /> : <ExpandIcon />}
             </IconBtn>
-            <IconBtn label="Close" onClick={attemptClose}><CloseIcon /></IconBtn>
           </div>
         </header>
 
-        {/* Property picker — only when not opened from a specific property */}
+        {/* Property picker - only when not opened from a specific property */}
         {!lockProperty && (
           <div className="px-6 pt-4 pb-1">
             <label className="text-[10px] uppercase tracking-[0.14em] block mb-1.5" style={{ color: "var(--text-faint)" }}>
               Property
             </label>
-            <select className="ui-select w-full" value={selectedProperty} onChange={(e) => setSelectedProperty(e.target.value)}>
-              <option value="" disabled>Select property…</option>
-              {visibleProperties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <Select
+              value={selectedProperty}
+              placeholder="Select property..."
+              onChange={setSelectedProperty}
+              options={visibleProperties.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </div>
         )}
 
         {/* Month / Year */}
         <div className="px-6 pt-4 pb-3 flex items-center gap-3" style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <div className="flex items-center gap-1.5">
-            <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>‹</button>
+            <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&lt;</button>
             <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 38, textAlign: "center" }}>{year}</span>
-            <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>›</button>
+            <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&gt;</button>
           </div>
-          <select className="ui-select flex-1" value={monthIdx} onChange={(e) => setMonthIdx(Number(e.target.value))}>
-            {MONTHS_FULL.map((m, i) => <option key={m} value={i}>{m}</option>)}
-          </select>
+          <div className="flex-1">
+            <Select
+              value={String(monthIdx)}
+              onChange={(v) => setMonthIdx(Number(v))}
+              options={MONTHS_FULL.map((m, i) => ({ value: String(i), label: m }))}
+            />
+          </div>
         </div>
 
         {/* Items */}
@@ -275,10 +290,12 @@ export function ExpenseEntryDrawer({
                   value={it.description} onChange={(e) => updateItem(it.key, { description: e.target.value })} />
 
                 <div className="grid grid-cols-1 @sm:grid-cols-[1fr_140px] gap-2.5">
-                  <select className="ui-select" value={it.category}
-                    onChange={(e) => updateItem(it.key, { category: e.target.value as ExpenseCategory })}>
-                    {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c]}</option>)}
-                  </select>
+                  <Select
+                    value={it.category}
+                    ariaLabel={`Expense category for item ${i + 1}`}
+                    onChange={(value) => updateItem(it.key, { category: value as ExpenseCategory })}
+                    options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: EXPENSE_CATEGORY_LABEL[c] }))}
+                  />
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-faint)" }}>RM</span>
                     <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00"
@@ -302,10 +319,15 @@ export function ExpenseEntryDrawer({
 
           {savedCount > 0 && (
             <div className="rounded-lg px-4 py-2.5 flex items-center gap-2" style={{ background: "rgba(47,158,111,0.10)", border: "1px solid var(--success)" }}>
-              <span style={{ color: "var(--success)" }}>✓</span>
+              <span style={{ color: "var(--success)" }}>&#10003;</span>
               <span className="text-xs font-medium" style={{ color: "var(--success)" }}>
-                Saved {savedCount} {savedCount === 1 ? "expense" : "expenses"} · {MONTHS_FULL[monthIdx]} {year}
+                Saved {savedCount} {savedCount === 1 ? "expense" : "expenses"} - {MONTHS_FULL[monthIdx]} {year}
               </span>
+            </div>
+          )}
+          {saveError && (
+            <div className="rounded-lg px-4 py-2.5 text-xs" style={{ background: "rgba(211,84,84,0.08)", border: "1px solid var(--danger)", color: "var(--danger)" }}>
+              {saveError}
             </div>
           )}
         </div>
@@ -315,7 +337,7 @@ export function ExpenseEntryDrawer({
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
-                Total · {validItems.length} {validItems.length === 1 ? "item" : "items"}
+                Total - {validItems.length} {validItems.length === 1 ? "item" : "items"}
               </span>
               <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
                 Expenses YTD becomes {fmt(ytd.expenses + total)}
@@ -325,9 +347,9 @@ export function ExpenseEntryDrawer({
           </div>
           <div className="flex items-center justify-end gap-2">
             <button type="button" className="ui-btn" onClick={attemptClose}>{dirty ? "Discard" : "Close"}</button>
-            <button type="button" className="ui-btn ui-btn-primary" disabled={!canSave || savedCount > 0}
-              style={{ opacity: !canSave || savedCount > 0 ? 0.55 : 1 }} onClick={handleSave}>
-              {savedCount > 0 ? "Saved ✓" : `Save ${validItems.length || ""} ${validItems.length === 1 ? "expense" : "expenses"}`.trim()}
+            <button type="button" className="ui-btn ui-btn-primary" disabled={!canSave || savedCount > 0 || saving}
+              style={{ opacity: !canSave || savedCount > 0 || saving ? 0.55 : 1 }} onClick={handleSave}>
+              {saving ? "Saving..." : savedCount > 0 ? "Saved" : `Save ${validItems.length || ""} ${validItems.length === 1 ? "expense" : "expenses"}`.trim()}
             </button>
           </div>
         </footer>

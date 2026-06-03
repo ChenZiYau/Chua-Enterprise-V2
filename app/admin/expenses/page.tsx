@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Select } from "@/components/ui/Select";
 import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
 import {
   MONTHS,
@@ -36,6 +38,7 @@ function fmt(value: number) {
 
 export default function ExpensesPage() {
   const { expenseEntries, visibleProperties, deleteExpenseEntry } = useRental();
+  const confirm = useConfirm();
 
   const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
   const [toMonth, setToMonth] = useState(toMonthInput(CUR_YEAR, 12));
@@ -87,8 +90,14 @@ export default function ExpensesPage() {
 
   const totalExpenses = filtered.reduce((s, e) => s + e.amount, 0);
 
-  function handleDelete(id: string, label: string) {
-    if (!confirm(`Delete expense "${label}"? This cannot be undone.`)) return;
+  async function handleDelete(id: string, label: string) {
+    const { confirmed } = await confirm({
+      title: "Delete expense?",
+      message: `Delete expense "${label}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
     deleteExpenseEntry(id);
   }
 
@@ -133,38 +142,32 @@ export default function ExpensesPage() {
         <input
           type="search"
           className="ui-input w-auto min-w-[200px] flex-1 max-w-[260px]"
-          placeholder="Search property, category, description…"
+          placeholder="Search property, category, description..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        <select
-          className="ui-select w-auto min-w-[160px]"
+        <Select
+          className="w-auto min-w-[160px]"
+          ariaLabel="Filter by property"
           value={filterProp}
-          onChange={(e) => setFilterProp(e.target.value)}
-        >
-          <option value="all">All Properties</option>
-          {visibleProperties.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+          onChange={setFilterProp}
+          options={[
+            { value: "all", label: "All Properties" },
+            ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
 
-        <select
-          className="ui-select w-auto min-w-[180px]"
+        <Select
+          className="w-auto min-w-[180px]"
+          ariaLabel="Filter by category"
           value={filterCategory}
-          onChange={(e) =>
-            setFilterCategory(e.target.value as ExpenseCategory | "all")
-          }
-        >
-          <option value="all">All Categories</option>
-          {EXPENSE_CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {EXPENSE_CATEGORY_LABEL[c]}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setFilterCategory(v as ExpenseCategory | "all")}
+          options={[
+            { value: "all", label: "All Categories" },
+            ...EXPENSE_CATEGORIES.map((c) => ({ value: c, label: EXPENSE_CATEGORY_LABEL[c] })),
+          ]}
+        />
 
         <div
           className="ml-auto text-sm font-semibold"
@@ -224,7 +227,7 @@ export default function ExpensesPage() {
                   entry.category === "other" && entry.custom_category
                     ? entry.custom_category
                     : EXPENSE_CATEGORY_LABEL[entry.category];
-                const label = `${categoryLabel} — ${MONTHS[entry.month - 1]} ${entry.year}`;
+                const label = `${categoryLabel} - ${MONTHS[entry.month - 1]} ${entry.year}`;
 
                 return (
                   <tr
@@ -254,7 +257,7 @@ export default function ExpensesPage() {
                       className="px-4 py-3 max-w-[200px] truncate"
                       style={{ color: "var(--text-muted)" }}
                     >
-                      {entry.description ?? "—"}
+                      {entry.description ?? "-"}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {entry.is_recurring ? (
@@ -278,7 +281,7 @@ export default function ExpensesPage() {
                           Irregular
                         </span>
                       ) : (
-                        <span style={{ color: "var(--text-faint)" }}>—</span>
+                        <span style={{ color: "var(--text-faint)" }}>-</span>
                       )}
                     </td>
                     <td
@@ -342,7 +345,7 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      {/* Add Expense — same itemized drawer used on the property page */}
+      {/* Add Expense - same itemized drawer used on the property page */}
       <ExpenseEntryDrawer open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );

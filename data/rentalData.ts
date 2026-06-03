@@ -62,7 +62,7 @@ export const seedProperties: Property[] = [
     status: "active",
     image_url:
       "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=70",
-    description: "Six-unit condo: Rooms A–D, Master Room, and Studio.",
+    description: "Six-unit condo: Rooms A-D, Master Room, and Studio.",
     total_units: 6,
     rented_units: 5,
     ytd_revenue: 0,
@@ -95,7 +95,7 @@ export const seedProperties: Property[] = [
 ];
 
 export const seedUnits: Unit[] = [
-  // ── 27 Menjalara: Rooms A – F ─────────────────────────────────────
+  // -- 27 Menjalara: Rooms A - F -------------------------------------
   {
     id: "unit_menj_a",
     property_id: "prop_menjalara",
@@ -163,7 +163,7 @@ export const seedUnits: Unit[] = [
     electricity_free_units: 50,
   },
 
-  // ── Kayangan: single whole unit ───────────────────────────────────
+  // -- Kayangan: single whole unit -----------------------------------
   {
     id: "unit_kayangan",
     property_id: "prop_kayangan",
@@ -176,7 +176,7 @@ export const seedUnits: Unit[] = [
     electricity_free_units: 0,
   },
 
-  // ── Paramount: Rooms A – D, Master Room, Studio ───────────────────
+  // -- Paramount: Rooms A - D, Master Room, Studio -------------------
   {
     id: "unit_para_a",
     property_id: "prop_paramount",
@@ -244,7 +244,7 @@ export const seedUnits: Unit[] = [
     electricity_free_units: 70,
   },
 
-  // ── Nova: single whole unit ────────────────────────────────────────
+  // -- Nova: single whole unit ----------------------------------------
   {
     id: "unit_nova",
     property_id: "prop_nova",

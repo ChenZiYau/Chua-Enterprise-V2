@@ -6,8 +6,22 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { notionCreate, notionUpdate, notionDelete, isNotionId } from "@/lib/notionClient";
+import {
+  revenueCreateFields,
+  revenuePatchFields,
+  expenseCreateFields,
+  expensePatchFields,
+  tenantCreateFields,
+  tenantPatchFields,
+  propertyCreateFields,
+  propertyPatchFields,
+  unitCreateFields,
+  unitPatchFields,
+} from "@/lib/notionSync";
 import type {
   Property,
   Unit,
@@ -20,15 +34,10 @@ import type {
   PaymentMethod,
   PaymentStatus,
   ExpenseCategory,
+  MaintenanceEntry,
+  MaintenanceStatus,
+  MaintenancePriority,
 } from "@/types/rental";
-import { seedProperties, seedUnits } from "@/data/rentalData";
-
-const STORAGE_KEY_PROPS = "chua.rental.properties.v2";
-const STORAGE_KEY_UNITS = "chua.rental.units.v1";
-const STORAGE_KEY_REVENUE = "chua.rental.revenue.v1";
-const STORAGE_KEY_EXPENSES = "chua.rental.expenses.v1";
-const STORAGE_KEY_TENANTS = "chua.rental.tenants.v1";
-
 type PropertyInput = Omit<Property, "id" | "slug"> & {
   id?: string;
   slug?: string;
@@ -39,45 +48,52 @@ type ExpenseInput = Omit<ExpenseEntry, "id" | "created_at">;
 type TenantInput = Omit<Tenant, "id" | "created_at"> & { id?: string };
 
 interface RentalContextValue {
-  // ── Properties ───────────────────────────────────────────────────
+  notionLoadError: string | null;
+  // -- Properties ---------------------------------------------------
   properties: Property[];
   visibleProperties: Property[];
   getProperty: (id: string) => Property | undefined;
-  createProperty: (input: PropertyInput) => Property;
-  updateProperty: (id: string, patch: Partial<Property>) => Property | undefined;
-  softDeleteProperty: (id: string) => void;
+  createProperty: (input: PropertyInput) => Promise<Property>;
+  updateProperty: (id: string, patch: Partial<Property>) => Promise<Property | undefined>;
+  softDeleteProperty: (id: string) => Promise<void>;
 
-  // ── Units ────────────────────────────────────────────────────────
+  // -- Units --------------------------------------------------------
   units: Unit[];
   getUnitsForProperty: (propertyId: string) => Unit[];
   getUnit: (unitId: string) => Unit | undefined;
-  updateUnit: (id: string, patch: Partial<Unit>) => void;
+  updateUnit: (id: string, patch: Partial<Unit>) => Promise<void>;
 
-  // ── Revenue entries ──────────────────────────────────────────────
+  // -- Revenue entries ----------------------------------------------
   revenueEntries: RevenueEntry[];
-  addRevenueEntry: (input: RevenueInput) => RevenueEntry;
-  updateRevenueEntry: (id: string, patch: Partial<RevenueEntry>) => void;
-  deleteRevenueEntry: (id: string) => void;
+  addRevenueEntry: (input: RevenueInput) => Promise<RevenueEntry>;
+  updateRevenueEntry: (id: string, patch: Partial<RevenueEntry>) => Promise<void>;
+  deleteRevenueEntry: (id: string) => Promise<void>;
   getRevenueEntry: (unitId: string, year: number, month: number) => RevenueEntry | undefined;
   getRevenueForUnit: (unitId: string, year: number) => RevenueEntry[];
   getRevenueForProperty: (propertyId: string, year: number) => RevenueEntry[];
 
-  // ── Expense entries ──────────────────────────────────────────────
+  // -- Expense entries ----------------------------------------------
   expenseEntries: ExpenseEntry[];
-  addExpenseEntry: (input: ExpenseInput) => ExpenseEntry;
-  updateExpenseEntry: (id: string, patch: Partial<ExpenseEntry>) => void;
-  deleteExpenseEntry: (id: string) => void;
+  addExpenseEntry: (input: ExpenseInput) => Promise<ExpenseEntry>;
+  updateExpenseEntry: (id: string, patch: Partial<ExpenseEntry>) => Promise<void>;
+  deleteExpenseEntry: (id: string) => Promise<void>;
   getExpensesForProperty: (propertyId: string, year: number) => ExpenseEntry[];
   getExpensesForMonth: (propertyId: string, year: number, month: number) => ExpenseEntry[];
 
-  // ── Tenants ──────────────────────────────────────────────────────
+  // -- Tenants ------------------------------------------------------
   tenants: Tenant[];
   getTenant: (id: string) => Tenant | undefined;
-  addTenant: (input: TenantInput) => Tenant;
-  updateTenant: (id: string, patch: Partial<Tenant>) => void;
-  deleteTenant: (id: string) => void;
+  addTenant: (input: TenantInput) => Promise<Tenant>;
+  updateTenant: (id: string, patch: Partial<Tenant>) => Promise<void>;
+  deleteTenant: (id: string) => Promise<void>;
 
-  // ── Aggregates ───────────────────────────────────────────────────
+  // -- Maintenance ---------------------------------------------------
+  maintenanceEntries: MaintenanceEntry[];
+  setMaintenanceEntriesFromPage: (entries: MaintenanceEntry[]) => void;
+  upsertMaintenanceEntry: (entry: MaintenanceEntry) => void;
+  removeMaintenanceEntry: (id: string) => void;
+
+  // -- Aggregates ---------------------------------------------------
   getPropertyYTD: (propertyId: string, year: number) => { revenue: number; expenses: number; net: number };
   getUnitYTD: (unitId: string, year: number) => { revenue: number };
 }
@@ -97,42 +113,66 @@ function generateId(prefix = "id") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function loadFromStorage<T>(key: string, fallback: T): T {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed as T;
-    }
-  } catch {/* ignore */}
-  return fallback;
+function normalizeMaintenanceStatus(value: string): MaintenanceStatus {
+  const v = value.trim().toLowerCase();
+  if (v === "in progress" || v === "in_progress") return "in_progress";
+  if (v === "completed") return "completed";
+  return "pending";
 }
 
-function saveToStorage(key: string, value: unknown) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {/* ignore */}
+function normalizeMaintenancePriority(value: string): MaintenancePriority {
+  const v = value.trim().toLowerCase();
+  if (v === "urgent") return "urgent";
+  if (v === "high") return "high";
+  if (v === "medium") return "medium";
+  return "low";
 }
 
 export function RentalProvider({ children }: { children: React.ReactNode }) {
-  const [properties, setProperties] = useState<Property[]>(seedProperties);
-  const [units, setUnits] = useState<Unit[]>(seedUnits);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [revenueEntries, setRevenueEntries] = useState<RevenueEntry[]>([]);
   const [expenseEntries, setExpenseEntries] = useState<ExpenseEntry[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [maintenanceEntries, setMaintenanceEntries] = useState<MaintenanceEntry[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [notionLoadError, setNotionLoadError] = useState<string | null>(null);
 
-  // ── Hydrate from localStorage ──────────────────────────────────────
+  // Latest properties/units in refs so the (stable) CRUD callbacks can resolve
+  // property/unit names when syncing to Notion without re-creating themselves.
+  const propsRef = useRef(properties);
+  propsRef.current = properties;
+  const unitsRef = useRef(units);
+  unitsRef.current = units;
+  const revenueEntriesRef = useRef(revenueEntries);
+  revenueEntriesRef.current = revenueEntries;
+  const expenseEntriesRef = useRef(expenseEntries);
+  expenseEntriesRef.current = expenseEntries;
+  const tenantsRef = useRef(tenants);
+  tenantsRef.current = tenants;
+  const maintenanceEntriesRef = useRef(maintenanceEntries);
+  maintenanceEntriesRef.current = maintenanceEntries;
+
+  const propNameById = useCallback((id?: string | null) => {
+    if (!id) return "";
+    return propsRef.current.find((p) => p.id === id)?.name ?? "";
+  }, []);
+  const unitNameById = useCallback((id?: string | null) => {
+    if (!id) return "";
+    return unitsRef.current.find((u) => u.id === id)?.name ?? "";
+  }, []);
+  const propNameForUnit = useCallback((unitId?: string | null) => {
+    if (!unitId) return "";
+    const u = unitsRef.current.find((x) => x.id === unitId);
+    return u ? propNameById(u.property_id) : "";
+  }, [propNameById]);
+
+  // -- Mark client hydration before loading Notion --------------------
   useEffect(() => {
-    setProperties(loadFromStorage(STORAGE_KEY_PROPS, seedProperties));
-    setUnits(loadFromStorage(STORAGE_KEY_UNITS, seedUnits));
-    setRevenueEntries(loadFromStorage<RevenueEntry[]>(STORAGE_KEY_REVENUE, []));
-    setExpenseEntries(loadFromStorage<ExpenseEntry[]>(STORAGE_KEY_EXPENSES, []));
-    setTenants(loadFromStorage<Tenant[]>(STORAGE_KEY_TENANTS, []));
     setHydrated(true);
   }, []);
 
-  // ── Hydrate from Notion (source of truth) ─────────────────────────
+  // -- Hydrate from Notion (source of truth) -------------------------
   useEffect(() => {
     if (!hydrated) return;
     let cancelled = false;
@@ -159,6 +199,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       electricityAmount: number; otherCharges: number; totalAmount: number;
       paymentDate: string; paymentMethod: string; paymentStatus: string;
       invoiceGenerated: boolean; notes: string;
+      invoiceNumber: string; invoiceSent: boolean; invoiceSentAt: string;
     };
     type NPExpense = {
       id: string; name: string; property: string;
@@ -172,6 +213,11 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       previousAddress: string; unit: string; property: string;
       leaseStart: string; leaseEnd: string; notes: string;
     };
+    type NPMaintenance = {
+      id: string; name: string; property: string; unit: string; tenant: string;
+      category: string; priority: string; status: string;
+      reportedDate: string; dueDate: string; assignedTo: string; description: string;
+    };
 
     async function loadJson<T>(url: string): Promise<T[]> {
       const r = await fetch(url, { cache: "no-store" });
@@ -182,14 +228,16 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        const [pData, uData, rData, eData, tData] = await Promise.all([
+        const [pData, uData, rData, eData, tData, mData] = await Promise.all([
           loadJson<NPProperty>("/api/notion/properties"),
           loadJson<NPUnit>("/api/notion/units"),
           loadJson<NPRevenue>("/api/notion/revenue"),
           loadJson<NPExpense>("/api/notion/expenses"),
           loadJson<NPTenant>("/api/notion/tenants"),
+          loadJson<NPMaintenance>("/api/notion/maintenance"),
         ]);
         if (cancelled) return;
+        setNotionLoadError(null);
 
         const props: Property[] = pData.map((p) => ({
           id: p.id,
@@ -247,6 +295,9 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           payment_status: (r.paymentStatus as PaymentStatus) || "pending",
           notes: r.notes || null,
           invoice_generated: !!r.invoiceGenerated,
+          invoice_number: r.invoiceNumber || null,
+          invoice_sent: !!r.invoiceSent,
+          invoice_sent_at: r.invoiceSentAt || null,
           created_at: nowIso,
         }));
 
@@ -262,6 +313,22 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           description: e.description || null,
           is_recurring: !!e.isRecurring,
           is_irregular: !!e.isIrregular,
+          created_at: nowIso,
+        }));
+
+        const maint: MaintenanceEntry[] = mData.map((m) => ({
+          id: m.id,
+          property: m.property,
+          unit: m.unit,
+          tenant: m.tenant,
+          issue: m.name,
+          category: m.category || "General",
+          priority: normalizeMaintenancePriority(m.priority),
+          status: normalizeMaintenanceStatus(m.status),
+          reported_date: m.reportedDate || "",
+          due_date: m.dueDate || "",
+          assigned_to: m.assignedTo || null,
+          description: m.description || null,
           created_at: nowIso,
         }));
 
@@ -284,7 +351,9 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
         setRevenueEntries(revs);
         setExpenseEntries(exps);
         setTenants(tens);
+        setMaintenanceEntries(maint);
       } catch (err) {
+        setNotionLoadError(err instanceof Error ? err.message : String(err));
         console.warn("Notion hydration failed", err);
       }
     })();
@@ -294,144 +363,304 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     };
   }, [hydrated]);
 
-  // ── Persist after hydration ────────────────────────────────────────
-  useEffect(() => {
-    if (!hydrated) return;
-    saveToStorage(STORAGE_KEY_PROPS, properties);
-  }, [properties, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    saveToStorage(STORAGE_KEY_UNITS, units);
-  }, [units, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    saveToStorage(STORAGE_KEY_REVENUE, revenueEntries);
-  }, [revenueEntries, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    saveToStorage(STORAGE_KEY_EXPENSES, expenseEntries);
-  }, [expenseEntries, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    saveToStorage(STORAGE_KEY_TENANTS, tenants);
-  }, [tenants, hydrated]);
-
-  // ── Property CRUD ──────────────────────────────────────────────────
-  const createProperty = useCallback((input: PropertyInput): Property => {
+  // -- Property CRUD --------------------------------------------------
+  const createProperty = useCallback(async (input: PropertyInput): Promise<Property> => {
     const id = input.id ?? generateId("prop");
     const slug = input.slug ?? (slugify(input.name) || id);
-    const next: Property = {
+    const draft: Property = {
       ...input,
       id,
       slug,
       deleted_at: input.deleted_at ?? null,
       delete_expires_at: input.delete_expires_at ?? null,
     };
+    const realId = await notionCreate("properties", propertyCreateFields(draft));
+    const next = { ...draft, id: realId };
+    const unitCount = Math.max(1, next.total_units || 1);
+    const createdUnits: Unit[] = [];
+    for (let i = 0; i < unitCount; i += 1) {
+      const label = next.rental_model === "whole_unit" ? "Unit" : `Room ${i + 1}`;
+      const unitDraft: Unit = {
+        id: generateId("unit"),
+        property_id: realId,
+        name: label,
+        label,
+        sort_order: i + 1,
+        is_rented: false,
+        tenant_name: null,
+        rental_rate: null,
+        electricity_free_units: 0,
+      };
+      const unitId = await notionCreate("units", unitCreateFields(unitDraft, { property: next.name }));
+      createdUnits.push({ ...unitDraft, id: unitId });
+    }
     setProperties((prev) => [next, ...prev]);
+    setUnits((prev) => [...prev, ...createdUnits]);
     return next;
   }, []);
 
-  const updateProperty = useCallback((id: string, patch: Partial<Property>) => {
-    let updated: Property | undefined;
+  const updateProperty = useCallback(async (id: string, patch: Partial<Property>) => {
+    const current = propsRef.current.find((p) => p.id === id);
+    if (!current) return undefined;
+    const updated = { ...current, ...patch };
+    if (isNotionId(id)) {
+      await notionUpdate("properties", id, propertyPatchFields(patch));
+    }
+    const currentUnits = unitsRef.current
+      .filter((unit) => unit.property_id === id)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const targetUnits = Math.max(1, updated.total_units || 1);
+    const createdUnits: Unit[] = [];
+    if (targetUnits > currentUnits.length) {
+      for (let i = currentUnits.length; i < targetUnits; i += 1) {
+        const label = updated.rental_model === "whole_unit" ? "Unit" : `Room ${i + 1}`;
+        const unitDraft: Unit = {
+          id: generateId("unit"),
+          property_id: id,
+          name: label,
+          label,
+          sort_order: i + 1,
+          is_rented: false,
+          tenant_name: null,
+          rental_rate: null,
+          electricity_free_units: 0,
+        };
+        const unitId = await notionCreate("units", unitCreateFields(unitDraft, { property: updated.name }));
+        createdUnits.push({ ...unitDraft, id: unitId });
+      }
+    }
+    const removedUnitIds = targetUnits < currentUnits.length ? currentUnits.slice(targetUnits).map((unit) => unit.id) : [];
+    for (const unitId of removedUnitIds) {
+      if (isNotionId(unitId)) await notionDelete("units", unitId);
+    }
+    if (patch.name) {
+      await Promise.all(
+        currentUnits
+          .filter((unit) => !removedUnitIds.includes(unit.id) && isNotionId(unit.id))
+          .map((unit) => notionUpdate("units", unit.id, unitPatchFields({ property_id: id }, { property: updated.name })))
+      );
+    }
     setProperties((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        updated = { ...p, ...patch };
-        return updated;
-      })
+      prev.map((p) => (p.id === id ? updated : p))
     );
+    setUnits((prev) => [
+      ...prev.filter((unit) => !removedUnitIds.includes(unit.id)),
+      ...createdUnits,
+    ]);
     return updated;
   }, []);
 
-  const softDeleteProperty = useCallback((id: string) => {
-    const now = new Date().toISOString();
-    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    setProperties((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, deleted_at: now, delete_expires_at: expires } : p
-      )
-    );
+  const softDeleteProperty = useCallback(async (id: string) => {
+    const unitIds = unitsRef.current.filter((unit) => unit.property_id === id).map((unit) => unit.id);
+    if (isNotionId(id)) {
+      await notionDelete("properties", id);
+    }
+    await Promise.all(unitIds.filter(isNotionId).map((unitId) => notionDelete("units", unitId)));
+    setProperties((prev) => prev.filter((p) => p.id !== id));
+    setUnits((prev) => prev.filter((unit) => unit.property_id !== id));
   }, []);
 
-  // ── Unit helpers ───────────────────────────────────────────────────
-  const updateUnit = useCallback((id: string, patch: Partial<Unit>) => {
+  // -- Unit helpers ---------------------------------------------------
+  const updateUnit = useCallback(async (id: string, patch: Partial<Unit>) => {
+    const current = unitsRef.current.find((u) => u.id === id);
+    if (!current) return;
+    const updated = { ...current, ...patch };
+    if (isNotionId(id)) {
+      await notionUpdate(
+        "units",
+        id,
+        unitPatchFields(patch, { property: propNameById(patch.property_id ?? current.property_id) })
+      );
+    }
     setUnits((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, ...patch } : u))
+      prev.map((u) => (u.id === id ? updated : u))
     );
-  }, []);
+  }, [propNameById]);
 
-  // ── Revenue CRUD ───────────────────────────────────────────────────
-  const addRevenueEntry = useCallback((input: RevenueInput): RevenueEntry => {
-    const entry: RevenueEntry = {
+  // -- Revenue CRUD ---------------------------------------------------
+  const addRevenueEntry = useCallback(async (input: RevenueInput): Promise<RevenueEntry> => {
+    const draft: RevenueEntry = {
       ...input,
       id: generateId("rev"),
       created_at: new Date().toISOString(),
     };
+    const realId = await notionCreate(
+      "revenue",
+      revenueCreateFields(draft, {
+        property: propNameById(draft.property_id),
+        unit: unitNameById(draft.unit_id),
+      })
+    );
+    const entry = { ...draft, id: realId };
     setRevenueEntries((prev) => {
-      // Replace if same unit/year/month already exists
       const filtered = prev.filter(
         (e) => !(e.unit_id === input.unit_id && e.year === input.year && e.month === input.month)
       );
       return [entry, ...filtered];
     });
     return entry;
-  }, []);
+  }, [propNameById, unitNameById]);
 
-  const updateRevenueEntry = useCallback((id: string, patch: Partial<RevenueEntry>) => {
+  const updateRevenueEntry = useCallback(async (id: string, patch: Partial<RevenueEntry>) => {
+    const current = revenueEntriesRef.current.find((e) => e.id === id);
+    if (!current) return;
+    const updated = { ...current, ...patch };
+    if (isNotionId(id)) {
+      await notionUpdate(
+        "revenue",
+        id,
+        revenuePatchFields(patch, {
+          property: propNameById(patch.property_id ?? current.property_id),
+          unit: unitNameById(patch.unit_id ?? current.unit_id),
+        })
+      );
+    }
     setRevenueEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, ...patch } : e))
+      prev.map((e) => (e.id === id ? updated : e))
     );
-  }, []);
+  }, [propNameById, unitNameById]);
 
-  const deleteRevenueEntry = useCallback((id: string) => {
+  const deleteRevenueEntry = useCallback(async (id: string) => {
+    if (isNotionId(id)) {
+      await notionDelete("revenue", id);
+    }
     setRevenueEntries((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
-  // ── Expense CRUD ───────────────────────────────────────────────────
-  const addExpenseEntry = useCallback((input: ExpenseInput): ExpenseEntry => {
-    const entry: ExpenseEntry = {
+  // -- Expense CRUD ---------------------------------------------------
+  const addExpenseEntry = useCallback(async (input: ExpenseInput): Promise<ExpenseEntry> => {
+    const draft: ExpenseEntry = {
       ...input,
       id: generateId("exp"),
       created_at: new Date().toISOString(),
     };
+    const realId = await notionCreate(
+      "expenses",
+      expenseCreateFields(draft, { property: propNameById(draft.property_id) })
+    );
+    const entry = { ...draft, id: realId };
     setExpenseEntries((prev) => [entry, ...prev]);
     return entry;
-  }, []);
+  }, [propNameById]);
 
-  const updateExpenseEntry = useCallback((id: string, patch: Partial<ExpenseEntry>) => {
+  const updateExpenseEntry = useCallback(async (id: string, patch: Partial<ExpenseEntry>) => {
+    const current = expenseEntriesRef.current.find((e) => e.id === id);
+    if (!current) return;
+    const updated = { ...current, ...patch };
+    if (isNotionId(id)) {
+      await notionUpdate(
+        "expenses",
+        id,
+        expensePatchFields(patch, { property: propNameById(patch.property_id ?? current.property_id) })
+      );
+    }
     setExpenseEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, ...patch } : e))
+      prev.map((e) => (e.id === id ? updated : e))
     );
-  }, []);
+  }, [propNameById]);
 
-  const deleteExpenseEntry = useCallback((id: string) => {
+  const deleteExpenseEntry = useCallback(async (id: string) => {
+    if (isNotionId(id)) {
+      await notionDelete("expenses", id);
+    }
     setExpenseEntries((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
-  // ── Tenant CRUD ────────────────────────────────────────────────────
-  const addTenant = useCallback((input: TenantInput): Tenant => {
-    const tenant: Tenant = {
+  // -- Tenant CRUD ----------------------------------------------------
+  const addTenant = useCallback(async (input: TenantInput): Promise<Tenant> => {
+    const draft: Tenant = {
       ...input,
       id: input.id ?? generateId("ten"),
       created_at: new Date().toISOString(),
     };
+    const realId = await notionCreate(
+      "tenants",
+      tenantCreateFields(draft, {
+        unit: unitNameById(draft.unit_id),
+        property: propNameForUnit(draft.unit_id),
+      })
+    );
+    const tenant = { ...draft, id: realId };
     setTenants((prev) => [tenant, ...prev]);
+    if (tenant.unit_id) {
+      if (isNotionId(tenant.unit_id)) {
+        await notionUpdate(
+          "units",
+          tenant.unit_id,
+          unitPatchFields({ is_rented: true, tenant_name: tenant.name }, { property: propNameForUnit(tenant.unit_id) })
+        );
+      }
+      setUnits((prev) =>
+        prev.map((unit) =>
+          unit.id === tenant.unit_id ? { ...unit, is_rented: true, tenant_name: tenant.name } : unit
+        )
+      );
+    }
     return tenant;
-  }, []);
+  }, [unitNameById, propNameForUnit]);
 
-  const updateTenant = useCallback((id: string, patch: Partial<Tenant>) => {
-    setTenants((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  }, []);
+  const updateTenant = useCallback(async (id: string, patch: Partial<Tenant>) => {
+    const current = tenantsRef.current.find((t) => t.id === id);
+    if (!current) return;
+    const unitId = patch.unit_id ?? current.unit_id;
+    const nextTenant = { ...current, ...patch };
+    if (isNotionId(id)) {
+      await notionUpdate(
+        "tenants",
+        id,
+        tenantPatchFields(patch, { unit: unitNameById(unitId), property: propNameForUnit(unitId) })
+      );
+    }
+    const unitUpdates: Promise<void>[] = [];
+    if (current.unit_id && current.unit_id !== nextTenant.unit_id && isNotionId(current.unit_id)) {
+      unitUpdates.push(notionUpdate("units", current.unit_id, unitPatchFields({ is_rented: false, tenant_name: null }, { property: propNameForUnit(current.unit_id) })));
+    }
+    if (nextTenant.unit_id && isNotionId(nextTenant.unit_id)) {
+      unitUpdates.push(notionUpdate("units", nextTenant.unit_id, unitPatchFields({ is_rented: true, tenant_name: nextTenant.name }, { property: propNameForUnit(nextTenant.unit_id) })));
+    }
+    await Promise.all(unitUpdates);
+    setTenants((prev) => prev.map((t) => (t.id === id ? nextTenant : t)));
+    setUnits((prev) =>
+      prev.map((unit) => {
+        if (unit.id === current.unit_id && current.unit_id !== nextTenant.unit_id) return { ...unit, is_rented: false, tenant_name: null };
+        if (unit.id === nextTenant.unit_id) return { ...unit, is_rented: true, tenant_name: nextTenant.name };
+        return unit;
+      })
+    );
+  }, [unitNameById, propNameForUnit]);
 
-  const deleteTenant = useCallback((id: string) => {
+  const deleteTenant = useCallback(async (id: string) => {
+    const current = tenantsRef.current.find((t) => t.id === id);
+    if (isNotionId(id)) {
+      await notionDelete("tenants", id);
+    }
+    if (current?.unit_id) {
+      if (isNotionId(current.unit_id)) {
+        await notionUpdate("units", current.unit_id, unitPatchFields({ is_rented: false, tenant_name: null }, { property: propNameForUnit(current.unit_id) }));
+      }
+      setUnits((prev) =>
+        prev.map((unit) => (unit.id === current.unit_id ? { ...unit, is_rented: false, tenant_name: null } : unit))
+      );
+    }
     setTenants((prev) => prev.filter((t) => t.id !== id));
+  }, [propNameForUnit]);
+
+  const setMaintenanceEntriesFromPage = useCallback((entries: MaintenanceEntry[]) => {
+    setMaintenanceEntries(entries);
   }, []);
 
-  // ── Derived context value ──────────────────────────────────────────
+  const upsertMaintenanceEntry = useCallback((entry: MaintenanceEntry) => {
+    setMaintenanceEntries((prev) => {
+      const found = prev.some((item) => item.id === entry.id);
+      return found ? prev.map((item) => (item.id === entry.id ? entry : item)) : [entry, ...prev];
+    });
+  }, []);
+
+  const removeMaintenanceEntry = useCallback((id: string) => {
+    setMaintenanceEntries((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  // -- Derived context value ------------------------------------------
   const value = useMemo<RentalContextValue>(() => {
     const visibleProperties = properties.filter((p) => !p.deleted_at);
 
@@ -470,6 +699,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
 
     return {
       properties,
+      notionLoadError,
       visibleProperties,
       getProperty: (id) => properties.find((p) => p.id === id),
       createProperty,
@@ -502,6 +732,11 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       updateTenant,
       deleteTenant,
 
+      maintenanceEntries,
+      setMaintenanceEntriesFromPage,
+      upsertMaintenanceEntry,
+      removeMaintenanceEntry,
+
       getPropertyYTD,
       getUnitYTD,
     };
@@ -511,6 +746,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     revenueEntries,
     expenseEntries,
     tenants,
+    maintenanceEntries,
+    notionLoadError,
     createProperty,
     updateProperty,
     softDeleteProperty,
@@ -524,6 +761,9 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     addTenant,
     updateTenant,
     deleteTenant,
+    setMaintenanceEntriesFromPage,
+    upsertMaintenanceEntry,
+    removeMaintenanceEntry,
   ]);
 
   return <RentalContext.Provider value={value}>{children}</RentalContext.Provider>;

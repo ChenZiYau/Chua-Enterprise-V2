@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRental } from "@/context/RentalContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { RENTAL_MODEL_LABEL, STATUS_LABEL, type Property } from "@/types/rental";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
 import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
@@ -12,7 +13,7 @@ import { PropertyEditDrawer } from "@/components/property/PropertyEditDrawer";
 import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
 
 function formatMYR(value: number | undefined) {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null) return "-";
   return new Intl.NumberFormat("en-MY", {
     style: "currency", currency: "MYR", maximumFractionDigits: 0,
   }).format(value);
@@ -39,6 +40,7 @@ export default function PropertyDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const { getProperty, updateProperty, softDeleteProperty, getUnitsForProperty, getPropertyYTD } = useRental();
+  const confirm = useConfirm();
 
   const property = getProperty(id);
   const units = getUnitsForProperty(id);
@@ -47,6 +49,7 @@ export default function PropertyDetailPage({
   const [drawer, setDrawer] = useState<DrawerState>({ open: false });
   const [editOpen, setEditOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (!property) {
     return (
@@ -71,15 +74,33 @@ export default function PropertyDetailPage({
   const isWhole = property.rental_model === "whole_unit";
   const unitWord = isWhole ? "unit" : "rooms";
 
-  function handleDelete() {
-    if (!confirm("Move this property to Trash?")) return;
-    softDeleteProperty(property!.id);
-    router.push("/admin/properties");
+  async function handleDelete() {
+    const { confirmed } = await confirm({
+      title: "Move property to Trash?",
+      message: `"${property!.name}" will be moved to Trash and hidden from the dashboard.`,
+      confirmLabel: "Move to Trash",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setActionError(null);
+    try {
+      await softDeleteProperty(property!.id);
+      router.push("/admin/properties");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not remove property from Notion.");
+    }
   }
 
   return (
     <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-8 max-w-6xl">
       <BackLink href="/admin/properties" label="Back to Properties" />
+
+      {actionError && (
+        <div className="ui-card px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: "var(--danger)", background: "rgba(211,84,84,0.08)" }}>
+          <p className="text-sm" style={{ color: "var(--danger)" }}>{actionError}</p>
+          <button type="button" className="ui-btn" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {/* Hero */}
       <header className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 items-start">
@@ -190,14 +211,14 @@ export default function PropertyDetailPage({
                       </p>
                       <p className="text-xs" style={{ color: "var(--text-faint)" }}>
                         {unit.tenant_name ?? "Vacant"}
-                        {unit.rental_rate ? ` · RM ${unit.rental_rate}/mo` : ""}
-                        {" · click to view monthly rent"}
+                        {unit.rental_rate ? ` - RM ${unit.rental_rate}/mo` : ""}
+                        {" - click to view monthly rent"}
                       </p>
                     </div>
                     <span className={"ui-chip " + (unit.is_rented ? "ui-chip-success" : "")}>
                       {unit.is_rented ? "Rented" : "Available"}
                     </span>
-                    <span aria-hidden className="text-base" style={{ color: "var(--text-faint)" }}>→</span>
+                    <span aria-hidden className="text-base" style={{ color: "var(--text-faint)" }}>&#8594;</span>
                   </button>
                 </li>
               ))}
@@ -206,7 +227,7 @@ export default function PropertyDetailPage({
         )}
       </section>
 
-      {/* Calendar drawer — click room row → month grid */}
+      {/* Calendar drawer - click room row -> month grid */}
       <RoomCalendarDrawer
         open={calendar.open}
         onClose={() => setCalendar({ open: false })}
@@ -221,7 +242,7 @@ export default function PropertyDetailPage({
         }}
       />
 
-      {/* Revenue drawer — same form used on the Revenue ledger */}
+      {/* Revenue drawer - same form used on the Revenue ledger */}
       <RevenueEntryDrawer
         open={drawer.open}
         onClose={() => setDrawer({ open: false })}
@@ -232,18 +253,24 @@ export default function PropertyDetailPage({
         preselectedYear={drawer.open ? drawer.year : undefined}
       />
 
-      {/* Edit drawer — slides in from the right with the property form */}
+      {/* Edit drawer - slides in from the right with the property form */}
       <PropertyEditDrawer
         open={editOpen}
         onClose={() => setEditOpen(false)}
         property={property}
-        onSave={(values) => {
-          updateProperty(property.id, values);
-          setEditOpen(false);
+        onSave={async (values) => {
+          setActionError(null);
+          try {
+            await updateProperty(property.id, values);
+            setEditOpen(false);
+          } catch (err) {
+            setActionError(err instanceof Error ? err.message : "Could not save property to Notion.");
+            throw err;
+          }
         }}
       />
 
-      {/* Expense drawer — itemized, multi-line expense entry */}
+      {/* Expense drawer - itemized, multi-line expense entry */}
       <ExpenseEntryDrawer
         open={expenseOpen}
         onClose={() => setExpenseOpen(false)}
@@ -257,7 +284,7 @@ export default function PropertyDetailPage({
 function BackLink({ href, label }: { href: string; label: string }) {
   return (
     <Link href={href} className="text-xs inline-flex items-center gap-1.5 w-fit" style={{ color: "var(--text-muted)" }}>
-      <span aria-hidden>←</span>{label}
+      <span aria-hidden>&#8592;</span>{label}
     </Link>
   );
 }

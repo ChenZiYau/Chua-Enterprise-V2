@@ -3,7 +3,7 @@ import "./globals.css";
 import { ThemeProvider, themeInitScript } from "@/components/theme/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "Chua Enterprise V2 — Admin Dashboard",
+  title: "Chua Enterprise V2 - Admin Dashboard",
   description: "Property management admin dashboard",
 };
 

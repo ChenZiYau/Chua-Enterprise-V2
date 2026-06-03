@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { useRental } from "@/context/RentalContext";
 import { IconSearch } from "@/components/admin/icons";
+import { Select } from "@/components/ui/Select";
 import { STATUS_LABEL, type PropertyFilters } from "@/types/rental";
 
 const initialFilters: PropertyFilters = {
@@ -55,9 +56,9 @@ export default function PropertiesPage() {
           </h2>
           <p className="text-sm mt-1.5" style={{ color: "var(--text-muted)" }}>
             {properties.length} active
-            <span style={{ color: "var(--text-faint)" }}> · </span>
+            <span style={{ color: "var(--text-faint)" }}> - </span>
             {roomCount} room rental
-            <span style={{ color: "var(--text-faint)" }}> · </span>
+            <span style={{ color: "var(--text-faint)" }}> - </span>
             {wholeCount} whole unit
           </p>
         </div>
@@ -67,7 +68,7 @@ export default function PropertiesPage() {
         </Link>
       </header>
 
-      {/* Filters — ghost strip, no boxed card to keep the page calm */}
+      {/* Filters - ghost strip, no boxed card to keep the page calm */}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[240px] max-w-md">
           <IconSearch
@@ -76,34 +77,32 @@ export default function PropertiesPage() {
           />
           <input
             className="ui-input"
-            placeholder="Search by name, address, city…"
+            placeholder="Search by name, address, city..."
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
           />
         </div>
-        <select
-          className="ui-select w-auto min-w-[160px]"
+        <Select
+          className="w-auto min-w-[160px]"
+          ariaLabel="Filter by rental model"
           value={filters.rental_model}
-          onChange={(e) =>
-            setFilters((f) => ({ ...f, rental_model: e.target.value as PropertyFilters["rental_model"] }))
-          }
-        >
-          <option value="all">All models</option>
-          <option value="room_rental">Room rental</option>
-          <option value="whole_unit">Whole unit</option>
-        </select>
-        <select
-          className="ui-select w-auto min-w-[160px]"
+          onChange={(v) => setFilters((f) => ({ ...f, rental_model: v as PropertyFilters["rental_model"] }))}
+          options={[
+            { value: "all", label: "All models" },
+            { value: "room_rental", label: "Room rental" },
+            { value: "whole_unit", label: "Whole unit" },
+          ]}
+        />
+        <Select
+          className="w-auto min-w-[160px]"
+          ariaLabel="Filter by status"
           value={filters.status}
-          onChange={(e) =>
-            setFilters((f) => ({ ...f, status: e.target.value as PropertyFilters["status"] }))
-          }
-        >
-          <option value="all">All statuses</option>
-          {(["active", "inactive", "under_service"] as const).map((s) => (
-            <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-          ))}
-        </select>
+          onChange={(v) => setFilters((f) => ({ ...f, status: v as PropertyFilters["status"] }))}
+          options={[
+            { value: "all", label: "All statuses" },
+            ...(["active", "inactive", "under_service"] as const).map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+          ]}
+        />
         {(filters.search || filters.rental_model !== "all" || filters.status !== "all") && (
           <button
             type="button"

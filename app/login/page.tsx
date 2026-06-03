@@ -34,7 +34,7 @@ export default function LoginPage() {
       className="min-h-screen grid grid-cols-1 lg:grid-cols-2"
       style={{ background: "var(--background)" }}
     >
-      {/* Left — property image */}
+      {/* Left - property image */}
       <aside className="relative hidden lg:block overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -52,7 +52,7 @@ export default function LoginPage() {
           }}
         />
 
-        {/* Brand mark — top left */}
+        {/* Brand mark - top left */}
         <div className="relative z-10 p-8 flex items-center gap-2.5 text-white">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -66,7 +66,7 @@ export default function LoginPage() {
           <span className="font-semibold tracking-tight">Chua Enterprise</span>
         </div>
 
-        {/* Caption — bottom */}
+        {/* Caption - bottom */}
         <div className="absolute inset-x-0 bottom-0 z-10 p-10 text-white">
           <p
             className="text-[11px] uppercase tracking-[0.18em] mb-3"
@@ -88,12 +88,12 @@ export default function LoginPage() {
             className="text-[10px] mt-8"
             style={{ color: "rgba(255,255,255,0.55)" }}
           >
-            Photo by Max Vakhtbovych · Pexels
+            Photo by Max Vakhtbovych - Pexels
           </p>
         </div>
       </aside>
 
-      {/* Right — form */}
+      {/* Right - form */}
       <main className="flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm flex flex-col gap-7">
           {/* Mobile brand */}
@@ -225,7 +225,7 @@ export default function LoginPage() {
               disabled={submitting}
               className="ui-btn ui-btn-primary w-full !py-2.5 disabled:opacity-70"
             >
-              {submitting ? "Signing in…" : "Sign in"}
+              {submitting ? "Signing in..." : "Sign in"}
             </button>
           </form>
 

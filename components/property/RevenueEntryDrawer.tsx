@@ -12,6 +12,7 @@ import {
   type PaymentStatus,
 } from "@/types/rental";
 import { calculateElectricityCharge } from "@/lib/electricity";
+import { Select } from "@/components/ui/Select";
 
 type View = "normal" | "expanded" | "minimized";
 
@@ -51,6 +52,8 @@ export function RevenueEntryDrawer({
   const [view, setView] = useState<View>("normal");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -74,12 +77,14 @@ export function RevenueEntryDrawer({
   const existingEntry = unitId ? getRevenueEntry(unitId, year, month) : undefined;
   const yearEntries = unitId ? getRevenueForUnit(unitId, year) : [];
 
-  // ── Reset on open ──
+  // -- Reset on open --
   useEffect(() => {
     if (!open) return;
     setView("normal");
     setConfirmOpen(false);
     setSaved(false);
+    setSaving(false);
+    setSaveError(null);
     setDirty(false);
     setErrors({});
     const initialProp = propertyId ?? visibleProperties[0]?.id ?? "";
@@ -183,9 +188,11 @@ export function RevenueEntryDrawer({
     return e;
   }
 
-  function handleSave(generateInvoice: boolean) {
+  async function handleSave(generateInvoice: boolean) {
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
+    setSaving(true);
+    setSaveError(null);
     const input = {
       property_id: selectedProperty, unit_id: unitId, year, month,
       rental_amount: rentalNum,
@@ -200,31 +207,36 @@ export function RevenueEntryDrawer({
       notes: notes.trim() || null,
       invoice_generated: generateInvoice,
     };
-    if (existingEntry) updateRevenueEntry(existingEntry.id, input);
-    else addRevenueEntry(input);
-    setSaved(true);
-    setDirty(false);
-    setTimeout(() => onClose(), 700);
+    try {
+      if (existingEntry) await updateRevenueEntry(existingEntry.id, input);
+      else await addRevenueEntry(input);
+      setSaved(true);
+      setDirty(false);
+      setTimeout(() => onClose(), 700);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save revenue to Notion.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!open) return null;
 
-  // ── Minimized bar ──
+  // -- Minimized bar --
   if (view === "minimized") {
     return (
       <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl px-4 py-3"
         style={{ background: "var(--surface)", border: "1px solid var(--border-soft)", boxShadow: "0 8px 32px rgba(15,17,22,0.16)", animation: "rvSlideUp 200ms cubic-bezier(.2,.7,.2,1)", maxWidth: "min(92vw, 340px)" }}>
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-            Revenue{dirty ? " · unsaved" : ""}
+            Revenue{dirty ? " - unsaved" : ""}
           </p>
           <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-            {activePropertyName}{unit ? ` · ${unit.name}` : ""}
+            {activePropertyName}{unit ? ` - ${unit.name}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <button type="button" onClick={() => setView("normal")} className="ui-btn" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}>Restore</button>
-          <button type="button" onClick={attemptClose} aria-label="Close" className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: "var(--text-muted)", border: "1px solid var(--border-soft)" }}><CloseIcon /></button>
         </div>
         {confirmOpen && <ConfirmDialog onSave={() => handleSave(false)} onDiscard={() => { setConfirmOpen(false); onClose(); }} onCancel={() => setConfirmOpen(false)} />}
         <Keyframes />
@@ -247,10 +259,10 @@ export function RevenueEntryDrawer({
         <header className="px-6 py-5 flex items-start justify-between gap-4" style={{ borderBottom: "1px solid var(--border-soft)" }}>
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-              {existingEntry ? "Edit revenue" : "Enter revenue"}{dirty ? " · unsaved" : ""}
+              {existingEntry ? "Edit revenue" : "Enter revenue"}{dirty ? " - unsaved" : ""}
             </p>
             <h2 id="revenue-drawer-title" className="text-lg font-semibold mt-1 truncate" style={{ color: "var(--text-primary)" }}>
-              {activePropertyName}{unit ? ` · ${unit.name}` : ""}
+              {activePropertyName}{unit ? ` - ${unit.name}` : ""}
             </h2>
             <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Record rent and charges for a room or unit.</p>
           </div>
@@ -259,7 +271,6 @@ export function RevenueEntryDrawer({
             <IconBtn label={view === "expanded" ? "Collapse" : "Expand"} onClick={() => setView(view === "expanded" ? "normal" : "expanded")}>
               {view === "expanded" ? <CollapseIcon /> : <ExpandIcon />}
             </IconBtn>
-            <IconBtn label="Close" onClick={attemptClose}><CloseIcon /></IconBtn>
           </div>
         </header>
 
@@ -269,48 +280,56 @@ export function RevenueEntryDrawer({
           <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
             <div>
               <label className={labelCls} style={labelStyle}>Property</label>
-              <select className="ui-select" disabled={lockProperty} value={selectedProperty}
-                style={errors.propertyId ? { borderColor: "var(--danger)" } : undefined}
-                onChange={onText(setSelectedProperty)}>
-                <option value="" disabled>Select property…</option>
-                {visibleProperties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              <Select
+                value={selectedProperty}
+                disabled={lockProperty}
+                invalid={!!errors.propertyId}
+                placeholder="Select property..."
+                onChange={(v) => { setSelectedProperty(v); setDirty(true); }}
+                options={visibleProperties.map((p) => ({ value: p.id, label: p.name }))}
+              />
               {errors.propertyId && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.propertyId}</p>}
             </div>
             <div>
               <label className={labelCls} style={labelStyle}>Room / Unit</label>
-              <select className="ui-select" value={unitId} disabled={units.length === 0}
-                style={errors.unitId ? { borderColor: "var(--danger)" } : undefined}
-                onChange={(e) => { setUnitId(e.target.value); }}>
-                <option value="" disabled>Select room/unit…</option>
-                {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <Select
+                value={unitId}
+                disabled={units.length === 0}
+                invalid={!!errors.unitId}
+                placeholder="Select room/unit..."
+                onChange={(v) => { setUnitId(v); setDirty(true); }}
+                options={units.map((u) => ({ value: u.id, label: u.name }))}
+              />
             </div>
           </div>
 
           {/* Month / Year */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
-              <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>‹</button>
+              <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&lt;</button>
               <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 38, textAlign: "center" }}>{year}</span>
-              <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>›</button>
+              <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&gt;</button>
             </div>
-            <select className="ui-select flex-1" value={monthIdx} onChange={(e) => setMonthIdx(Number(e.target.value))}>
-              {MONTHS_FULL.map((m, i) => <option key={m} value={i}>{m}</option>)}
-            </select>
+            <div className="flex-1">
+              <Select
+                value={String(monthIdx)}
+                onChange={(v) => setMonthIdx(Number(v))}
+                options={MONTHS_FULL.map((m, i) => ({ value: String(i), label: m }))}
+              />
+            </div>
           </div>
 
           {existingEntry && (
             <div className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-xs" style={{ background: "rgba(224,162,61,0.10)", border: "1px solid var(--warning)", color: "var(--warning)" }}>
-              <span className="mt-px">⚠</span>
+              <span className="mt-px">&#9888;</span>
               <span>An entry already exists for {MONTHS_FULL[monthIdx]} {year}. Saving will update it.</span>
             </div>
           )}
 
           {unit && (
             <div className="grid grid-cols-3 gap-2 rounded-lg px-3 py-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
-              <MiniStat label="Tenant" value={unit.tenant_name ?? "—"} />
-              <MiniStat label="Base rent" value={unit.rental_rate ? `RM ${unit.rental_rate}` : "—"} />
+              <MiniStat label="Tenant" value={unit.tenant_name ?? "-"} />
+              <MiniStat label="Base rent" value={unit.rental_rate ? `RM ${unit.rental_rate}` : "-"} />
               <MiniStat label="Free kWh" value={`${unit.electricity_free_units}`} />
             </div>
           )}
@@ -338,7 +357,7 @@ export function RevenueEntryDrawer({
                 value={elecUnits} onChange={onText(setElecUnits)} />
               {elecBill ? (
                 <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-                  {elecBill.unitsUsed} − {elecBill.freeUnits} free = {elecBill.chargeableUnits} kWh → <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
+                  {elecBill.unitsUsed} - {elecBill.freeUnits} free = {elecBill.chargeableUnits} kWh &#8594; <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
                 </p>
               ) : freeUnits > 0 ? (
                 <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>{freeUnits} kWh free. Enter a reading to auto-calculate the charge.</p>
@@ -358,20 +377,24 @@ export function RevenueEntryDrawer({
               </div>
               <div>
                 <label className={labelCls} style={labelStyle}>Status</label>
-                <select className="ui-select" value={payStatus} onChange={onText((v) => setPayStatus(v as PaymentStatus))}>
-                  {(["paid", "partial", "pending", "overdue"] as PaymentStatus[]).map((s) => <option key={s} value={s}>{PAYMENT_STATUS_LABEL[s]}</option>)}
-                </select>
+                <Select
+                  value={payStatus}
+                  onChange={(v) => { setPayStatus(v as PaymentStatus); setDirty(true); }}
+                  options={(["paid", "partial", "pending", "overdue"] as PaymentStatus[]).map((s) => ({ value: s, label: PAYMENT_STATUS_LABEL[s] }))}
+                />
               </div>
               <div>
                 <label className={labelCls} style={labelStyle}>Method</label>
-                <select className="ui-select" value={payMethod} onChange={onText((v) => setPayMethod(v as PaymentMethod))}>
-                  {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{PAYMENT_METHOD_LABEL[m]}</option>)}
-                </select>
+                <Select
+                  value={payMethod}
+                  onChange={(v) => { setPayMethod(v as PaymentMethod); setDirty(true); }}
+                  options={PAYMENT_METHODS.map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))}
+                />
               </div>
               {payMethod === "other" && (
                 <div>
                   <label className={labelCls} style={labelStyle}>Custom method</label>
-                  <input type="text" placeholder="Describe…" className={inputCls}
+                  <input type="text" placeholder="Describe..." className={inputCls}
                     style={errors.customPayMethod ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
                     value={customPayMethod} onChange={onText(setCustomPayMethod)} />
                   {errors.customPayMethod && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.customPayMethod}</p>}
@@ -380,7 +403,7 @@ export function RevenueEntryDrawer({
             </div>
             <div>
               <label className={labelCls} style={labelStyle}>Notes (optional)</label>
-              <textarea rows={2} placeholder="Any remarks…" className={`${inputCls} resize-none`} style={inputStyle}
+              <textarea rows={2} placeholder="Any remarks..." className={`${inputCls} resize-none`} style={inputStyle}
                 value={notes} onChange={onText(setNotes)} />
             </div>
           </div>
@@ -408,8 +431,13 @@ export function RevenueEntryDrawer({
 
           {saved && (
             <div className="rounded-lg px-4 py-2.5 flex items-center gap-2" style={{ background: "rgba(47,158,111,0.10)", border: "1px solid var(--success)" }}>
-              <span style={{ color: "var(--success)" }}>✓</span>
-              <span className="text-xs font-medium" style={{ color: "var(--success)" }}>Saved · {MONTHS_FULL[monthIdx]} {year}</span>
+              <span style={{ color: "var(--success)" }}>&#10003;</span>
+              <span className="text-xs font-medium" style={{ color: "var(--success)" }}>Saved - {MONTHS_FULL[monthIdx]} {year}</span>
+            </div>
+          )}
+          {saveError && (
+            <div className="rounded-lg px-4 py-2.5 text-xs" style={{ background: "rgba(211,84,84,0.08)", border: "1px solid var(--danger)", color: "var(--danger)" }}>
+              {saveError}
             </div>
           )}
         </div>
@@ -421,11 +449,11 @@ export function RevenueEntryDrawer({
             <span className="text-xl font-bold tabular-nums" style={{ color: "var(--accent)" }}>{fmt(totalAmount)}</span>
           </div>
           <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2">
-            <button type="button" className="ui-btn justify-center" disabled={saved} onClick={() => handleSave(false)}>
-              {saved ? "Saved ✓" : "Save only"}
+            <button type="button" className="ui-btn justify-center" disabled={saved || saving} onClick={() => handleSave(false)}>
+              {saving ? "Saving..." : saved ? "Saved" : "Save only"}
             </button>
-            <button type="button" className="ui-btn ui-btn-primary justify-center" disabled={saved} onClick={() => handleSave(true)}>
-              {existingEntry ? "Update & invoice" : "Save & invoice"}
+            <button type="button" className="ui-btn ui-btn-primary justify-center" disabled={saved || saving} onClick={() => handleSave(true)}>
+              {saving ? "Saving..." : existingEntry ? "Update & invoice" : "Save & invoice"}
             </button>
           </div>
         </footer>

@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRental } from "@/context/RentalContext";
+import { Select } from "@/components/ui/Select";
+import type { ExpenseCategory } from "@/types/rental";
 
 type EntryKind = "revenue" | "expense";
 
@@ -32,6 +34,10 @@ const MONTHS = [
   { value: "december", label: "December" },
 ];
 
+const MONTH_INDEX: Record<string, number> = Object.fromEntries(
+  MONTHS.map((month, index) => [month.value, index + 1])
+);
+
 function titleFromParam(value: string | null, fallback: string) {
   if (!value) return fallback;
   return value
@@ -48,15 +54,16 @@ function dateFromPeriod(month: string | null, year: string | null) {
 export function EntryForm({ kind }: { kind: EntryKind }) {
   const router = useRouter();
   const params = useSearchParams();
-  const { visibleProperties } = useRental();
+  const { visibleProperties, getUnitsForProperty, addRevenueEntry, addExpenseEntry } = useRental();
+  const now = new Date();
   const initialPropertyId = params.get("property") ?? visibleProperties[0]?.id ?? "";
-  const initialMonth = params.get("month") ?? "may";
-  const initialYear = params.get("year") ?? "2026";
+  const initialMonth = params.get("month") ?? MONTHS[now.getMonth()].value;
+  const initialYear = params.get("year") ?? String(now.getFullYear());
 
   const [propertyId, setPropertyId] = useState(initialPropertyId);
   const [date, setDate] = useState(() => dateFromPeriod(params.get("month"), params.get("year")));
   const [amount, setAmount] = useState("");
-  const [unit, setUnit] = useState(() => titleFromParam(params.get("unit"), ""));
+  const [unitId, setUnitId] = useState("");
   const [month, setMonth] = useState(initialMonth);
   const [year, setYear] = useState(initialYear);
   const [category, setCategory] = useState(() =>
@@ -64,23 +71,81 @@ export function EntryForm({ kind }: { kind: EntryKind }) {
   );
   const [note, setNote] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 5 }, (_, i) => String(currentYear - i));
+  const propertyUnits = propertyId ? getUnitsForProperty(propertyId) : [];
 
   const title = kind === "revenue" ? "Enter Revenue" : "Add Expense";
   const verb = kind === "revenue" ? "Save Revenue" : "Save Expense";
   const backHref = propertyId ? `/admin/properties/${propertyId}` : "/admin/properties";
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Persistence for entries is not implemented yet — this is a placeholder
-    // that confirms the inputs are wired correctly.
-    setSaved(true);
-    setTimeout(() => router.push(backHref), 700);
+    const amountNum = Number(amount);
+    const monthNum = MONTH_INDEX[month] ?? now.getMonth() + 1;
+    const yearNum = Number(year) || now.getFullYear();
+    if (!propertyId) {
+      setError("Select a property.");
+      return;
+    }
+    if (kind === "revenue" && !unitId) {
+      setError("Select a unit or room.");
+      return;
+    }
+    if (!amountNum || amountNum <= 0) {
+      setError("Enter an amount greater than 0.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      if (kind === "revenue") {
+        await addRevenueEntry({
+          property_id: propertyId,
+          unit_id: unitId,
+          year: yearNum,
+          month: monthNum,
+          rental_amount: amountNum,
+          electricity_units: null,
+          electricity_amount: null,
+          other_charges_amount: null,
+          total_amount: amountNum,
+          payment_date: date,
+          payment_method: "bank_transfer",
+          custom_payment_method: null,
+          payment_status: "paid",
+          notes: note.trim() || null,
+          invoice_generated: false,
+        });
+      } else {
+        await addExpenseEntry({
+          property_id: propertyId,
+          year: yearNum,
+          month: monthNum,
+          expense_date: date,
+          category: "other" as ExpenseCategory,
+          custom_category: category.trim() || null,
+          amount: amountNum,
+          description: note.trim() || category.trim() || null,
+          is_recurring: false,
+          is_irregular: false,
+        });
+      }
+      setSaved(true);
+      setTimeout(() => router.push(backHref), 700);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Could not save ${kind} to Notion.`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-6">
       <Link href={backHref} className="text-sm" style={{ color: "var(--text-muted)" }}>
-        ← Back
+        &#8592; Back
       </Link>
 
       <form
@@ -98,28 +163,23 @@ export function EntryForm({ kind }: { kind: EntryKind }) {
 
         <label className="flex flex-col gap-1.5">
           <span className={labelClass} style={labelStyle}>Property</span>
-          <select
-            className="ui-select"
+          <Select
             value={propertyId}
-            onChange={(e) => setPropertyId(e.target.value)}
-            required
-          >
-            <option value="" disabled>Select property…</option>
-            {visibleProperties.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+            placeholder="Select property..."
+            options={visibleProperties.map((p) => ({ value: p.id, label: p.name }))}
+            onChange={setPropertyId}
+          />
         </label>
 
         {kind === "revenue" ? (
           <label className="flex flex-col gap-1.5">
             <span className={labelClass} style={labelStyle}>Unit / Room</span>
-            <input
-              className={inputClass}
-              style={inputStyle}
-              placeholder="Room A or Whole Unit"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
+            <Select
+              value={unitId}
+              placeholder={propertyId ? "Select unit..." : "Select a property first"}
+              disabled={!propertyId}
+              options={propertyUnits.map((unit) => ({ value: unit.id, label: unit.name }))}
+              onChange={setUnitId}
             />
           </label>
         ) : null}
@@ -154,27 +214,19 @@ export function EntryForm({ kind }: { kind: EntryKind }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="flex flex-col gap-1.5">
             <span className={labelClass} style={labelStyle}>Month</span>
-            <select
-              className="ui-select"
+            <Select
               value={month}
-              onChange={(e) => setMonth(e.target.value)}
-            >
-              {MONTHS.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
+              options={MONTHS}
+              onChange={setMonth}
+            />
           </label>
           <label className="flex flex-col gap-1.5">
             <span className={labelClass} style={labelStyle}>Year</span>
-            <select
-              className="ui-select"
+            <Select
               value={year}
-              onChange={(e) => setYear(e.target.value)}
-            >
-              {["2026", "2025", "2024"].map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
+              options={yearOptions.map((item) => ({ value: item, label: item }))}
+              onChange={setYear}
+            />
           </label>
         </div>
 
@@ -200,9 +252,10 @@ export function EntryForm({ kind }: { kind: EntryKind }) {
         </label>
 
         <div className="flex justify-end gap-2 pt-2">
+          {error && <p className="mr-auto self-center text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
           <Link href={backHref} className="ui-btn">Cancel</Link>
-          <button type="submit" className="ui-btn ui-btn-primary" disabled={saved}>
-            {saved ? "Saved" : verb}
+          <button type="submit" className="ui-btn ui-btn-primary" disabled={saved || saving}>
+            {saving ? "Saving..." : saved ? "Saved" : verb}
           </button>
         </div>
       </form>

@@ -193,7 +193,7 @@ export function RoomCalendarDrawer({
                       {label}
                     </span>
                     {state === "paid" ? (
-                      <span style={{ color: "var(--success)", fontSize: "0.85rem" }}>✓</span>
+                      <span style={{ color: "var(--success)", fontSize: "0.85rem" }}>&#10003;</span>
                     ) : isCurrent ? (
                       <span
                         className="text-[9px] uppercase tracking-[0.12em] font-semibold px-1.5 py-0.5 rounded"
@@ -242,7 +242,7 @@ export function RoomCalendarDrawer({
           className="px-6 py-4 flex items-center justify-between gap-2"
           style={{ borderTop: "1px solid var(--border-soft)" }}
         >
-          <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>← → to switch year</p>
+          <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>&#8592; &#8594; to switch year</p>
           <button type="button" className="ui-btn" onClick={onClose}>Close</button>
         </footer>
       </aside>

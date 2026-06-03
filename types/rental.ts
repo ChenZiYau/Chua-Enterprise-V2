@@ -131,6 +131,9 @@ export interface RevenueEntry {
   payment_status: PaymentStatus;
   notes?: string | null;
   invoice_generated: boolean;
+  invoice_number?: string | null;
+  invoice_sent?: boolean;
+  invoice_sent_at?: string | null;
   created_at: string;
 }
 
@@ -160,6 +163,25 @@ export interface Tenant {
   lease_start?: string | null;
   lease_end?: string | null;
   notes?: string | null;
+  created_at: string;
+}
+
+export type MaintenanceStatus = "pending" | "in_progress" | "completed";
+export type MaintenancePriority = "low" | "medium" | "high" | "urgent";
+
+export interface MaintenanceEntry {
+  id: string;
+  property: string;
+  unit: string;
+  tenant: string;
+  issue: string;
+  category: string;
+  priority: MaintenancePriority;
+  status: MaintenanceStatus;
+  reported_date: string;
+  due_date: string;
+  assigned_to?: string | null;
+  description?: string | null;
   created_at: string;
 }
 

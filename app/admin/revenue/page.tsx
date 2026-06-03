@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Select } from "@/components/ui/Select";
 import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
 import {
   MONTHS,
@@ -52,6 +54,7 @@ const STATUS_COLORS: Record<PaymentStatus, { bg: string; text: string }> = {
 export default function RevenuePage() {
   const { revenueEntries, visibleProperties, getUnit, deleteRevenueEntry } =
     useRental();
+  const confirm = useConfirm();
 
   const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
   const [toMonth, setToMonth] = useState(toMonthInput(CUR_YEAR, 12));
@@ -60,6 +63,7 @@ export default function RevenuePage() {
   const [filterUnit, setFilterUnit] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [entry, setEntry] = useState<EntryState>({ open: false });
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Units for selected property
   const unitOptions =
@@ -122,10 +126,20 @@ export default function RevenuePage() {
 
   const totalRevenue = filtered.reduce((s, e) => s + e.total_amount, 0);
 
-  function handleDelete(id: string, label: string) {
-    if (!confirm(`Delete revenue entry for ${label}? This cannot be undone.`))
-      return;
-    deleteRevenueEntry(id);
+  async function handleDelete(id: string, label: string) {
+    const { confirmed } = await confirm({
+      title: "Delete revenue entry?",
+      message: `Delete the revenue entry for ${label}? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setActionError(null);
+    try {
+      await deleteRevenueEntry(id);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not delete revenue from Notion.");
+    }
   }
 
   return (
@@ -171,56 +185,54 @@ export default function RevenuePage() {
         <input
           type="search"
           className="ui-input w-auto min-w-[200px] flex-1 max-w-[280px]"
-          placeholder="Search property, unit, tenant, notes…"
+          placeholder="Search property, unit, tenant, notes..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
         {/* Property */}
-        <select
-          className="ui-select w-auto min-w-[160px]"
+        <Select
+          className="w-auto min-w-[160px]"
+          ariaLabel="Filter by property"
           value={filterProp}
-          onChange={(e) => {
-            setFilterProp(e.target.value);
+          onChange={(v) => {
+            setFilterProp(v);
             setFilterUnit("all");
           }}
-        >
-          <option value="all">All Properties</option>
-          {visibleProperties.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "all", label: "All Properties" },
+            ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
 
-        {/* Unit — only shown when a property is selected */}
+        {/* Unit - only shown when a property is selected */}
         {filterProp !== "all" && unitOptions.length > 0 && (
-          <select
-            className="ui-select w-auto min-w-[140px]"
+          <Select
+            className="w-auto min-w-[140px]"
+            ariaLabel="Filter by unit"
             value={filterUnit}
-            onChange={(e) => setFilterUnit(e.target.value)}
-          >
-            <option value="all">All Units</option>
-            {unitOptions.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterUnit}
+            options={[
+              { value: "all", label: "All Units" },
+              ...unitOptions.map((u) => ({ value: u.id, label: u.name })),
+            ]}
+          />
         )}
 
         {/* Status */}
-        <select
-          className="ui-select w-auto min-w-[130px]"
+        <Select
+          className="w-auto min-w-[130px]"
+          ariaLabel="Filter by status"
           value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-        >
-          <option value="all">All Statuses</option>
-          <option value="paid">Paid</option>
-          <option value="partial">Partial</option>
-          <option value="pending">Pending</option>
-          <option value="overdue">Overdue</option>
-        </select>
+          onChange={setFilterStatus}
+          options={[
+            { value: "all", label: "All Statuses" },
+            { value: "paid", label: "Paid" },
+            { value: "partial", label: "Partial" },
+            { value: "pending", label: "Pending" },
+            { value: "overdue", label: "Overdue" },
+          ]}
+        />
 
         <div
           className="ml-auto text-sm font-semibold"
@@ -229,6 +241,13 @@ export default function RevenuePage() {
           Total: {fmt(totalRevenue)}
         </div>
       </div>
+
+      {actionError && (
+        <div className="ui-card px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: "var(--danger)", background: "rgba(211,84,84,0.08)" }}>
+          <p className="text-sm" style={{ color: "var(--danger)" }}>{actionError}</p>
+          <button type="button" className="ui-btn" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {/* Table */}
       {filtered.length === 0 ? (
@@ -291,7 +310,7 @@ export default function RevenuePage() {
                 const unit = getUnit(entry.unit_id);
                 const statusColors =
                   STATUS_COLORS[entry.payment_status ?? "pending"];
-                const label = `${unit?.name ?? entry.unit_id} — ${MONTHS[entry.month - 1]} ${entry.year}`;
+                const label = `${unit?.name ?? entry.unit_id} - ${MONTHS[entry.month - 1]} ${entry.year}`;
                 return (
                   <tr
                     key={entry.id}
@@ -331,7 +350,7 @@ export default function RevenuePage() {
                     >
                       {entry.electricity_amount != null
                         ? fmt(entry.electricity_amount)
-                        : "—"}
+                        : "-"}
                     </td>
                     <td
                       className="px-4 py-3 text-right tabular-nums"
@@ -340,7 +359,7 @@ export default function RevenuePage() {
                       {entry.other_charges_amount != null &&
                       entry.other_charges_amount > 0
                         ? fmt(entry.other_charges_amount)
-                        : "—"}
+                        : "-"}
                     </td>
                     <td
                       className="px-4 py-3 text-right font-semibold tabular-nums"
@@ -356,7 +375,7 @@ export default function RevenuePage() {
                         ? entry.payment_method === "other"
                           ? (entry.custom_payment_method ?? "Other")
                           : PAYMENT_METHOD_LABEL[entry.payment_method]
-                        : "—"}
+                        : "-"}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span
@@ -372,7 +391,7 @@ export default function RevenuePage() {
                     <td className="px-4 py-3 text-center">
                       {entry.invoice_generated ? (
                         <span className="ui-chip ui-chip-success text-xs">
-                          ✓ Generated
+                          &#10003; Generated
                         </span>
                       ) : (
                         <span className="ui-chip text-xs">Pending</span>
@@ -438,7 +457,7 @@ export default function RevenuePage() {
         </div>
       )}
 
-      {/* Enter / edit revenue — same drawer used on the property page */}
+      {/* Enter / edit revenue - same drawer used on the property page */}
       <RevenueEntryDrawer
         open={entry.open}
         onClose={() => setEntry({ open: false })}

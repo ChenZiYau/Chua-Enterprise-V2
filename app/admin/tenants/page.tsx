@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Select } from "@/components/ui/Select";
 import {
   MONTHS,
   PAYMENT_STATUS_LABEL,
@@ -45,6 +47,8 @@ export default function TenantsPage() {
   const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -73,10 +77,21 @@ export default function TenantsPage() {
       .sort((a, b) => a.tenant.name.localeCompare(b.tenant.name));
   }, [tenants, visibleProperties, getUnit, search, filterProp]);
 
-  function handleDelete(t: Tenant) {
-    if (!confirm(`Delete tenant "${t.name}"? This cannot be undone.`)) return;
-    deleteTenant(t.id);
-    setDrawer({ mode: "closed" });
+  async function handleDelete(t: Tenant) {
+    const { confirmed } = await confirm({
+      title: "Delete tenant?",
+      message: `Delete tenant "${t.name}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setActionError(null);
+    try {
+      await deleteTenant(t.id);
+      setDrawer({ mode: "closed" });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not delete tenant from Notion.");
+    }
   }
 
   return (
@@ -90,7 +105,7 @@ export default function TenantsPage() {
             Tenants
           </h2>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-            Customer directory — IC, contact, current unit, and payment history.
+            Customer directory - IC, contact, current unit, and payment history.
           </p>
         </div>
         <button
@@ -106,24 +121,31 @@ export default function TenantsPage() {
         <input
           type="search"
           className="ui-input w-auto min-w-[240px] flex-1 max-w-[360px]"
-          placeholder="Search name, IC, email, phone, unit…"
+          placeholder="Search name, IC, email, phone, unit..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select
-          className="ui-select w-auto min-w-[160px]"
+        <Select
+          className="w-auto min-w-[160px]"
+          ariaLabel="Filter by property"
           value={filterProp}
-          onChange={(e) => setFilterProp(e.target.value)}
-        >
-          <option value="all">All Properties</option>
-          {visibleProperties.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+          onChange={setFilterProp}
+          options={[
+            { value: "all", label: "All Properties" },
+            ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
         <div className="ml-auto text-xs" style={{ color: "var(--text-muted)" }}>
           {rows.length} of {tenants.length} tenant{tenants.length === 1 ? "" : "s"}
         </div>
       </div>
+
+      {actionError && (
+        <div className="ui-card px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: "var(--danger)", background: "rgba(211,84,84,0.08)" }}>
+          <p className="text-sm" style={{ color: "var(--danger)" }}>{actionError}</p>
+          <button type="button" className="ui-btn" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <div className="ui-card p-12 text-center">
@@ -164,16 +186,16 @@ export default function TenantsPage() {
                     {tenant.name}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
-                    {tenant.ic_number ?? "—"}
+                    {tenant.ic_number ?? "-"}
                   </td>
                   <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
-                    {tenant.email ?? "—"}
+                    {tenant.email ?? "-"}
                   </td>
                   <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
-                    {tenant.phone ?? "—"}
+                    {tenant.phone ?? "-"}
                   </td>
                   <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
-                    {unit ? `${prop?.name ?? ""} · ${unit.name}` : "—"}
+                    {unit ? `${prop?.name ?? ""} - ${unit.name}` : "-"}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
@@ -235,13 +257,19 @@ export default function TenantsPage() {
           properties={visibleProperties}
           units={units}
           onClose={() => setDrawer({ mode: "closed" })}
-          onSubmit={(input) => {
-            if (drawer.mode === "edit") {
-              updateTenant(drawer.tenant.id, input);
-            } else {
-              addTenant(input);
+          onSubmit={async (input) => {
+            setActionError(null);
+            try {
+              if (drawer.mode === "edit") {
+                await updateTenant(drawer.tenant.id, input);
+              } else {
+                await addTenant(input);
+              }
+              setDrawer({ mode: "closed" });
+            } catch (err) {
+              setActionError(err instanceof Error ? err.message : "Could not save tenant to Notion.");
+              throw err;
             }
-            setDrawer({ mode: "closed" });
           }}
         />
       )}
@@ -327,7 +355,7 @@ function TenantDetailDrawer({
               <Field label="IC #" value={tenant.ic_number} mono />
               <Field label="Email" value={tenant.email} />
               <Field label="Phone" value={tenant.phone} />
-              <Field label="Current Unit" value={unit ? `${prop?.name ?? ""} · ${unit.name}` : null} />
+              <Field label="Current Unit" value={unit ? `${prop?.name ?? ""} - ${unit.name}` : null} />
               <Field label="Lease Start" value={tenant.lease_start} />
               <Field label="Lease End" value={tenant.lease_end} />
             </dl>
@@ -337,7 +365,7 @@ function TenantDetailDrawer({
             <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--text-faint)" }}>
               Previous Rental Address
             </p>
-            <p style={{ color: "var(--text-secondary)" }}>{tenant.previous_address ?? "—"}</p>
+            <p style={{ color: "var(--text-secondary)" }}>{tenant.previous_address ?? "-"}</p>
           </section>
 
           {tenant.notes && (
@@ -420,7 +448,7 @@ function Field({
     <div>
       <dt className="text-xs mb-0.5" style={{ color: "var(--text-faint)" }}>{label}</dt>
       <dd className={mono ? "font-mono text-xs" : ""} style={{ color: "var(--text-primary)" }}>
-        {value ?? "—"}
+        {value ?? "-"}
       </dd>
     </div>
   );
@@ -437,7 +465,7 @@ function TenantFormDrawer({
   properties: ReturnType<typeof useRental>["visibleProperties"];
   units: ReturnType<typeof useRental>["units"];
   onClose: () => void;
-  onSubmit: (input: Omit<Tenant, "id" | "created_at">) => void;
+  onSubmit: (input: Omit<Tenant, "id" | "created_at">) => Promise<void>;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [icNumber, setIcNumber] = useState(initial?.ic_number ?? "");
@@ -453,25 +481,35 @@ function TenantFormDrawer({
   const [leaseStart, setLeaseStart] = useState(initial?.lease_start ?? "");
   const [leaseEnd, setLeaseEnd] = useState(initial?.lease_end ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const unitOptions = propertyId
     ? units.filter((u) => u.property_id === propertyId).sort((a, b) => a.sort_order - b.sort_order)
     : [];
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSubmit({
-      name: name.trim(),
-      ic_number: icNumber.trim() || null,
-      email: email.trim() || null,
-      phone: phone.trim() || null,
-      previous_address: previousAddress.trim() || null,
-      unit_id: unitId || null,
-      lease_start: leaseStart || null,
-      lease_end: leaseEnd || null,
-      notes: notes.trim() || null,
-    });
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmit({
+        name: name.trim(),
+        ic_number: icNumber.trim() || null,
+        email: email.trim() || null,
+        phone: phone.trim() || null,
+        previous_address: previousAddress.trim() || null,
+        unit_id: unitId || null,
+        lease_start: leaseStart || null,
+        lease_end: leaseEnd || null,
+        notes: notes.trim() || null,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save tenant to Notion.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -493,7 +531,6 @@ function TenantFormDrawer({
           <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
             {initial ? "Edit Tenant" : "Add Tenant"}
           </h3>
-          <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
         </div>
 
         <div className="p-6 flex flex-col gap-4 text-sm flex-1">
@@ -519,33 +556,30 @@ function TenantFormDrawer({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Property</label>
-              <select
-                className="ui-select w-full"
+              <Select
                 value={propertyId}
-                onChange={(e) => {
-                  setPropertyId(e.target.value);
+                placeholder="- None -"
+                onChange={(v) => {
+                  setPropertyId(v);
                   setUnitId("");
                 }}
-              >
-                <option value="">— None —</option>
-                {properties.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "- None -" },
+                  ...properties.map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
             </div>
             <div>
               <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Unit</label>
-              <select
-                className="ui-select w-full"
+              <Select
                 value={unitId}
-                onChange={(e) => setUnitId(e.target.value)}
-                disabled={!propertyId}
-              >
-                <option value="">— None —</option>
-                {unitOptions.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
+                placeholder={propertyId ? "- None -" : "Select a property first"}
+                onChange={setUnitId}
+                options={[
+                  { value: "", label: "- None -" },
+                  ...unitOptions.map((u) => ({ value: u.id, label: u.name })),
+                ]}
+              />
             </div>
           </div>
 
@@ -569,9 +603,10 @@ function TenantFormDrawer({
           className="p-4 border-t flex justify-end gap-2 sticky bottom-0"
           style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}
         >
+          {error && <p className="mr-auto self-center text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
           <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="ui-btn ui-btn-primary">
-            {initial ? "Save Changes" : "Add Tenant"}
+          <button type="submit" className="ui-btn ui-btn-primary" disabled={saving}>
+            {saving ? "Saving..." : initial ? "Save Changes" : "Add Tenant"}
           </button>
         </div>
       </form>

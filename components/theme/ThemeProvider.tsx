@@ -95,5 +95,5 @@ export function useTheme() {
   return ctx;
 }
 
-/** Inline script string — set initial theme before paint to avoid flash. */
+/** Inline script string - set initial theme before paint to avoid flash. */
 export const themeInitScript = `(function(){try{var k='${STORAGE_KEY}';var s=localStorage.getItem(k);var m=window.matchMedia('(prefers-color-scheme: dark)').matches;var t=(s==='light'||s==='dark')?s:(m?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;

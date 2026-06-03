@@ -9,7 +9,16 @@
       "Bash(npx next *)",
       "mcp__claude_ai_Notion__notion-fetch",
       "Bash(curl *)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "mcp__plugin_Notion_notion__notion-search",
+      "mcp__plugin_Notion_notion__notion-fetch",
+      "mcp__plugin_Notion_notion__notion-create-database",
+      "mcp__plugin_Notion_notion__notion-create-pages",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 30)",
+      "Bash(python -)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "notion"
+  ]
 }

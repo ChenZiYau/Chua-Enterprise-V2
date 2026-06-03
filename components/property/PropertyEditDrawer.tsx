@@ -17,7 +17,7 @@ export function PropertyEditDrawer({
   open: boolean;
   onClose: () => void;
   property: Property | null;
-  onSave: (values: PropertyFormValues) => void;
+  onSave: (values: PropertyFormValues) => void | Promise<void>;
 }) {
   const [view, setView] = useState<View>("normal");
   const [dirty, setDirty] = useState(false);
@@ -32,7 +32,7 @@ export function PropertyEditDrawer({
     }
   }, [open, property?.id]);
 
-  // Attempt to close — guard unsaved changes with the center confirm dialog.
+  // Attempt to close - guard unsaved changes with the center confirm dialog.
   const attemptClose = useCallback(() => {
     if (dirty) {
       setConfirmOpen(true);
@@ -68,7 +68,7 @@ export function PropertyEditDrawer({
 
   if (!open || !property) return null;
 
-  // ── Minimized: a compact floating bar; the page behind stays interactive ──
+  // -- Minimized: a compact floating bar; the page behind stays interactive --
   if (view === "minimized") {
     return (
       <div
@@ -86,7 +86,7 @@ export function PropertyEditDrawer({
             className="text-[10px] uppercase tracking-[0.16em]"
             style={{ color: "var(--text-faint)" }}
           >
-            Editing{dirty ? " · unsaved" : ""}
+            Editing{dirty ? " - unsaved" : ""}
           </p>
           <p
             className="text-sm font-semibold truncate"
@@ -167,7 +167,7 @@ export function PropertyEditDrawer({
               className="text-[10px] uppercase tracking-[0.16em]"
               style={{ color: "var(--text-faint)" }}
             >
-              Edit property{dirty ? " · unsaved changes" : ""}
+              Edit property{dirty ? " - unsaved changes" : ""}
             </p>
             <h2
               id="property-edit-title"
@@ -197,7 +197,7 @@ export function PropertyEditDrawer({
           </div>
         </header>
 
-        {/* Body — the existing property form, footer handled by the drawer */}
+        {/* Body - the existing property form, footer handled by the drawer */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
           <PropertyForm
             id={FORM_ID}
@@ -229,7 +229,7 @@ export function PropertyEditDrawer({
         </footer>
       </aside>
 
-      {/* Center confirm dialog — discard or save unsaved changes */}
+      {/* Center confirm dialog - discard or save unsaved changes */}
       {confirmOpen && (
         <ConfirmDialog
           dirty={dirty}
@@ -247,7 +247,7 @@ export function PropertyEditDrawer({
   );
 }
 
-// ── Center modal asking the user to discard or save ──
+// -- Center modal asking the user to discard or save --
 function ConfirmDialog({
   dirty,
   formId,

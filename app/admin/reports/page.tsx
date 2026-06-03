@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
+import { Select } from "@/components/ui/Select";
 import {
   MONTHS,
   MONTHS_FULL,
@@ -137,30 +138,26 @@ export default function ReportsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
-          <select
-            className="ui-select w-auto min-w-[140px]"
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-          >
-            {MONTHS_FULL.map((m, i) => (
-              <option key={m} value={i + 1}>{m}</option>
-            ))}
-          </select>
-          <select
-            className="ui-select w-auto min-w-[110px]"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          <Select
+            className="w-auto min-w-[140px]"
+            ariaLabel="Report month"
+            value={String(month)}
+            onChange={(v) => setMonth(Number(v))}
+            options={MONTHS_FULL.map((m, i) => ({ value: String(i + 1), label: m }))}
+          />
+          <Select
+            className="w-auto min-w-[110px]"
+            ariaLabel="Report year"
+            value={String(year)}
+            onChange={(v) => setYear(Number(v))}
+            options={years.map((y) => ({ value: String(y), label: String(y) }))}
+          />
           <button
             type="button"
             className="ui-btn ui-btn-primary"
             onClick={() => window.print()}
           >
-            Download / Print PDF
+            Print / Save as PDF
           </button>
         </div>
       </div>
@@ -168,7 +165,7 @@ export default function ReportsPage() {
       <div className="ui-card p-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-            Chua Enterprise · Monthly Report
+            Chua Enterprise - Monthly Report
           </p>
           <h1 className="text-2xl font-bold mt-1" style={{ color: "var(--text-primary)" }}>
             {MONTHS_FULL[month - 1]} {year}
@@ -328,7 +325,7 @@ export default function ReportsPage() {
 
       <section className="ui-card p-6">
         <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-          Revenue Entries — {MONTHS[month - 1]} {year}
+          Revenue Entries - {MONTHS[month - 1]} {year}
         </h3>
         {data.revs.length === 0 ? (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>

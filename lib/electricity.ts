@@ -44,25 +44,25 @@ function applyTNBTiers(units: number): number {
   let charge = 0;
   let remaining = units;
 
-  // Tier 1: 1–200 kWh @ RM 0.218/kWh
+  // Tier 1: 1-200 kWh @ RM 0.218/kWh
   const t1 = Math.min(remaining, 200);
   charge += t1 * 0.218;
   remaining -= t1;
   if (remaining <= 0) return charge;
 
-  // Tier 2: 201–300 kWh @ RM 0.334/kWh
+  // Tier 2: 201-300 kWh @ RM 0.334/kWh
   const t2 = Math.min(remaining, 100);
   charge += t2 * 0.334;
   remaining -= t2;
   if (remaining <= 0) return charge;
 
-  // Tier 3: 301–600 kWh @ RM 0.516/kWh
+  // Tier 3: 301-600 kWh @ RM 0.516/kWh
   const t3 = Math.min(remaining, 300);
   charge += t3 * 0.516;
   remaining -= t3;
   if (remaining <= 0) return charge;
 
-  // Tier 4: 601–900 kWh @ RM 0.546/kWh
+  // Tier 4: 601-900 kWh @ RM 0.546/kWh
   const t4 = Math.min(remaining, 300);
   charge += t4 * 0.546;
   remaining -= t4;

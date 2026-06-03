@@ -24,7 +24,7 @@ export default function EditPropertyPage({
           className="text-xs inline-flex items-center gap-1.5"
           style={{ color: "var(--text-muted)" }}
         >
-          <span aria-hidden>←</span>
+          <span aria-hidden>&#8592;</span>
           Back to Properties
         </Link>
         <div className="ui-card p-12 text-center">
@@ -44,7 +44,7 @@ export default function EditPropertyPage({
           className="text-xs inline-flex items-center gap-1.5"
           style={{ color: "var(--text-muted)" }}
         >
-          <span aria-hidden>←</span>
+          <span aria-hidden>&#8592;</span>
           Back to {property.name}
         </Link>
         <div className="mt-4">
@@ -61,7 +61,7 @@ export default function EditPropertyPage({
             {property.name}
           </h2>
           <p className="text-sm mt-1.5" style={{ color: "var(--text-muted)" }}>
-            Editing identity, location, or capacity is safe — historical revenue, expenses, and invoices are linked by ID.
+            Editing identity, location, or capacity is safe - historical revenue, expenses, and invoices are linked by ID.
           </p>
         </div>
       </div>
@@ -71,8 +71,8 @@ export default function EditPropertyPage({
           initial={property}
           submitLabel="Save Changes"
           onCancel={() => router.push(`/admin/properties/${property.id}`)}
-          onSubmit={(values) => {
-            updateProperty(property.id, values);
+          onSubmit={async (values) => {
+            await updateProperty(property.id, values);
             router.push(`/admin/properties/${property.id}`);
           }}
         />
