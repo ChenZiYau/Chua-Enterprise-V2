@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
@@ -10,6 +10,50 @@ import {
   type PaymentStatus,
   type Tenant,
 } from "@/types/rental";
+
+type ViewMode = "table" | "grid";
+const VIEW_STORAGE_KEY = "tenants:viewMode";
+
+type LeaseTone = "good" | "warn" | "danger";
+type LeaseStatus = { label: string; tone: LeaseTone };
+const LEASE_SOON_DAYS = 30;
+
+const LEASE_TONE_COLORS: Record<LeaseTone, { bg: string; text: string }> = {
+  good: { bg: "rgba(47,158,111,0.10)", text: "var(--success)" },
+  warn: { bg: "rgba(224,162,61,0.10)", text: "var(--warning)" },
+  danger: { bg: "rgba(211,84,84,0.10)", text: "var(--danger)" },
+};
+
+/** Current payment status for a tenant's unit, derived from real revenue rows.
+ *  Overdue anywhere wins; otherwise the most recent month's status. Null when
+ *  there are no revenue rows for the unit (so we never invent a value). */
+function derivePaymentStatus(
+  unitId: string | null | undefined,
+  revenueEntries: ReturnType<typeof useRental>["revenueEntries"]
+): PaymentStatus | null {
+  if (!unitId) return null;
+  const entries = revenueEntries.filter((e) => e.unit_id === unitId);
+  if (entries.length === 0) return null;
+  if (entries.some((e) => e.payment_status === "overdue")) return "overdue";
+  const latest = entries.reduce((a, b) =>
+    b.year > a.year || (b.year === a.year && b.month > a.month) ? b : a
+  );
+  return latest.payment_status ?? null;
+}
+
+/** Lease status from lease_end, mirroring the dashboard's 30-day window. Null
+ *  when there's no (valid) lease end date. */
+function deriveLeaseStatus(leaseEnd: string | null | undefined): LeaseStatus | null {
+  if (!leaseEnd) return null;
+  const end = new Date(`${leaseEnd}T00:00:00`);
+  if (Number.isNaN(end.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((end.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) return { label: "Expired", tone: "danger" };
+  if (days <= LEASE_SOON_DAYS) return { label: "Ending Soon", tone: "warn" };
+  return { label: "Active", tone: "good" };
+}
 
 function fmt(value: number) {
   return new Intl.NumberFormat("en-MY", {
@@ -48,7 +92,18 @@ export default function TenantsPage() {
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
   const confirm = useConfirm();
+
+  // Restore the preferred view on mount (kept in an effect to avoid SSR/hydration
+  // mismatch), and persist any change back to localStorage.
+  useEffect(() => {
+    const saved = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    if (saved === "grid" || saved === "table") setViewMode(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(VIEW_STORAGE_KEY, viewMode);
+  }, [viewMode]);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -58,7 +113,13 @@ export default function TenantsPage() {
         const prop = unit
           ? visibleProperties.find((p) => p.id === unit.property_id)
           : undefined;
-        return { tenant: t, unit, prop };
+        return {
+          tenant: t,
+          unit,
+          prop,
+          payment: derivePaymentStatus(t.unit_id, revenueEntries),
+          lease: deriveLeaseStatus(t.lease_end),
+        };
       })
       .filter(({ prop }) => filterProp === "all" || prop?.id === filterProp)
       .filter(({ tenant, unit, prop }) => {
@@ -75,7 +136,7 @@ export default function TenantsPage() {
         );
       })
       .sort((a, b) => a.tenant.name.localeCompare(b.tenant.name));
-  }, [tenants, visibleProperties, getUnit, search, filterProp]);
+  }, [tenants, visibleProperties, getUnit, search, filterProp, revenueEntries]);
 
   async function handleDelete(t: Tenant) {
     const { confirmed } = await confirm({
@@ -135,8 +196,11 @@ export default function TenantsPage() {
             ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
           ]}
         />
-        <div className="ml-auto text-xs" style={{ color: "var(--text-muted)" }}>
-          {rows.length} of {tenants.length} tenant{tenants.length === 1 ? "" : "s"}
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {rows.length} of {tenants.length} tenant{tenants.length === 1 ? "" : "s"}
+          </span>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
         </div>
       </div>
 
@@ -148,18 +212,45 @@ export default function TenantsPage() {
       )}
 
       {rows.length === 0 ? (
-        <div className="ui-card p-12 text-center">
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            No tenants yet.{" "}
-            <button
-              type="button"
-              onClick={() => setDrawer({ mode: "create" })}
-              style={{ color: "var(--accent)" }}
-            >
-              Add a tenant
-            </button>{" "}
-            to get started.
-          </p>
+        tenants.length === 0 ? (
+          <div className="ui-card p-12 text-center">
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              No tenants yet.{" "}
+              <button
+                type="button"
+                onClick={() => setDrawer({ mode: "create" })}
+                style={{ color: "var(--accent)" }}
+              >
+                Add a tenant
+              </button>{" "}
+              to get started.
+            </p>
+          </div>
+        ) : (
+          <div className="ui-card p-12 text-center flex flex-col gap-1">
+            <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+              No tenants found.
+            </p>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Try adjusting your search or property filter.
+            </p>
+          </div>
+        )
+      ) : viewMode === "grid" ? (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+
+          {rows.map(({ tenant, unit, prop, payment, lease }) => (
+            <TenantCard
+              key={tenant.id}
+              tenant={tenant}
+              unitLabel={unit ? `${prop?.name ?? ""} - ${unit.name}` : null}
+              payment={payment}
+              lease={lease}
+              onView={() => setDrawer({ mode: "view", tenant })}
+              onEdit={() => setDrawer({ mode: "edit", tenant })}
+              onDelete={() => handleDelete(tenant)}
+            />
+          ))}
         </div>
       ) : (
         <div className="ui-card overflow-x-auto">
@@ -273,6 +364,203 @@ export default function TenantsPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function ViewToggle({
+  value,
+  onChange,
+}: {
+  value: ViewMode;
+  onChange: (v: ViewMode) => void;
+}) {
+  const options: { value: ViewMode; label: string; icon: React.ReactNode }[] = [
+    {
+      value: "table",
+      label: "Table",
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      ),
+    },
+    {
+      value: "grid",
+      label: "Grid",
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" />
+          <rect x="14" y="3" width="7" height="7" />
+          <rect x="3" y="14" width="7" height="7" />
+          <rect x="14" y="14" width="7" height="7" />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <div
+      className="inline-flex p-0.5 rounded-lg"
+      style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}
+      role="group"
+      aria-label="Switch tenant view"
+    >
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            aria-pressed={active}
+            title={`${opt.label} view`}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition"
+            style={{
+              background: active ? "var(--surface)" : "transparent",
+              color: active ? "var(--accent)" : "var(--text-muted)",
+              boxShadow: active ? "var(--shadow-xs)" : "none",
+              border: active ? "1px solid var(--accent)" : "1px solid transparent",
+            }}
+          >
+            {opt.icon}
+            <span className="hidden sm:inline">{opt.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Badge({ label, bg, text }: { label: string; bg: string; text: string }) {
+  return (
+    <span
+      className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+      style={{ background: bg, color: text }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function TenantCard({
+  tenant,
+  unitLabel,
+  payment,
+  lease,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  tenant: Tenant;
+  unitLabel: string | null;
+  payment: PaymentStatus | null;
+  lease: LeaseStatus | null;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      onClick={onView}
+      className="ui-card p-4 flex flex-col gap-3 cursor-pointer transition-colors hover:bg-[var(--surface-muted)]"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium truncate" style={{ color: "var(--text-primary)" }}>
+            {tenant.name}
+          </p>
+          <p className="text-xs mt-0.5 truncate" style={{ color: "var(--accent)" }}>
+            {unitLabel ?? "No unit assigned"}
+          </p>
+        </div>
+        <div className="flex gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="w-7 h-7 rounded inline-flex items-center justify-center hover:bg-[var(--surface-subtle)]"
+            title="Edit"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="w-7 h-7 rounded inline-flex items-center justify-center hover:bg-[var(--surface-subtle)]"
+            title="Delete"
+            style={{ color: "var(--danger)" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <dl className="flex flex-col gap-1.5 text-xs">
+        <CardRow label="IC" value={tenant.ic_number} mono />
+        <CardRow label="Email" value={tenant.email} />
+        <CardRow label="Phone" value={tenant.phone} />
+        {tenant.lease_end ? <CardRow label="Lease end" value={tenant.lease_end} /> : null}
+      </dl>
+
+      {(payment || lease) && (
+        <div
+          className="flex flex-wrap gap-2 pt-3 border-t"
+          style={{ borderColor: "var(--border-soft)" }}
+        >
+          {payment && (
+            <Badge
+              label={`Payment: ${PAYMENT_STATUS_LABEL[payment]}`}
+              bg={STATUS_COLORS[payment].bg}
+              text={STATUS_COLORS[payment].text}
+            />
+          )}
+          {lease && (
+            <Badge
+              label={`Lease: ${lease.label}`}
+              bg={LEASE_TONE_COLORS[lease.tone].bg}
+              text={LEASE_TONE_COLORS[lease.tone].text}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value?: string | null;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="shrink-0" style={{ color: "var(--text-faint)" }}>{label}</dt>
+      <dd
+        className={`truncate text-right ${mono ? "font-mono" : ""}`}
+        style={{ color: "var(--text-secondary)" }}
+      >
+        {value ?? "-"}
+      </dd>
     </div>
   );
 }
