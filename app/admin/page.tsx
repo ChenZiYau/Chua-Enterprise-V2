@@ -1,14 +1,5 @@
-import { OverviewCard } from "@/components/admin/OverviewCard";
-import { YearlyChart } from "@/components/admin/YearlyChart";
-import {
-  TodaysCheckup,
-  RentCollectionStatus,
-  OverdueTenants,
-  MaintenancePriority,
-  LeaseAlerts,
-  PropertyCondition,
-  RecentActivity,
-} from "@/components/admin/DashboardSections";
+import { DashboardClient } from "@/components/admin/DashboardClient";
+import { RecentActivity } from "@/components/admin/DashboardSections";
 import {
   getProperties,
   getRevenue,
@@ -76,65 +67,11 @@ export default async function AdminOverviewPage() {
   }
 
   const d = buildDashboard({ properties, units, tenants, revenue, expenses, maintenance });
-  const k = d.kpis;
-
-  const kpis = [
-    {
-      label: "Rent Collected",
-      value: fmtMYR(k.collectedThisMonth),
-      hint: `${k.paidCount} of ${k.billedCount} tenants paid this month`,
-      trend: "up" as const,
-    },
-    {
-      label: "Outstanding Rent",
-      value: fmtMYR(k.outstanding),
-      hint: `${k.pendingCount} ${k.pendingCount === 1 ? "payment" : "payments"} pending`,
-      trend: "flat" as const,
-    },
-    {
-      label: "Overdue Rent",
-      value: fmtMYR(k.overdue),
-      hint: `${k.overdueTenantCount} ${k.overdueTenantCount === 1 ? "tenant" : "tenants"} overdue`,
-      trend: (k.overdue > 0 ? "down" : "flat") as "down" | "flat",
-    },
-    {
-      label: "Occupancy",
-      value: `${k.occupancyPct}%`,
-      hint: `${k.vacantUnits} vacant · ${k.rentedUnits}/${k.totalUnits} units`,
-      trend: "flat" as const,
-    },
-    {
-      label: "Net Profit",
-      value: fmtMYR(k.netProfit),
-      hint: "Collected − expenses (this month)",
-      trend: (k.netProfit >= 0 ? "up" : "down") as "up" | "down",
-    },
-  ];
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6 p-4 sm:p-6 lg:p-8">
-      {/* Top: rental-focused KPIs */}
-      <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
-        {kpis.map((kpi) => (
-          <OverviewCard key={kpi.label} {...kpi} />
-        ))}
-      </section>
-
-      {/* Main: action items + health (left), operational alerts (right) */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-4 sm:gap-6">
-        <div className="flex flex-col gap-4 sm:gap-6 min-w-0">
-          <TodaysCheckup data={d.checkup} />
-          <YearlyChart />
-          <PropertyCondition rows={d.propertyHealth} />
-        </div>
-
-        <aside className="flex flex-col gap-4 sm:gap-6">
-          <RentCollectionStatus data={d.collection} />
-          <OverdueTenants tenants={d.overdueTenants} />
-          <MaintenancePriority data={d.maintenance} />
-          <LeaseAlerts data={d.leaseAlerts} />
-        </aside>
-      </div>
+      {/* Interactive overview: rent, occupancy, properties, today's checkup */}
+      <DashboardClient data={d} />
 
       {/* Bottom: activity feed */}
       <RecentActivity items={d.activity} />

@@ -301,17 +301,32 @@ export function PropertyForm({
               onChange={(e) => set("total_units", Number(e.target.value) || 0)}
             />
           </Field>
-          <Field label={isWhole ? "Rented" : "Rented rooms"}>
-            <input
-              type="number"
-              min={0}
-              max={values.total_units}
-              className={inputClass}
-              style={inputStyle}
-              value={values.rented_units}
-              onChange={(e) => set("rented_units", Number(e.target.value) || 0)}
-            />
-          </Field>
+          {isWhole ? (
+            /* A whole unit is either occupied by its tenant or vacant — a "rented
+               count" makes no sense, so offer a plain Occupied/Vacant choice. */
+            <Field label="Occupancy">
+              <Select
+                value={values.rented_units > 0 ? "occupied" : "vacant"}
+                options={[
+                  { value: "vacant", label: "Vacant" },
+                  { value: "occupied", label: "Occupied" },
+                ]}
+                onChange={(value) => set("rented_units", value === "occupied" ? 1 : 0)}
+              />
+            </Field>
+          ) : (
+            <Field label="Rented rooms">
+              <input
+                type="number"
+                min={0}
+                max={values.total_units}
+                className={inputClass}
+                style={inputStyle}
+                value={values.rented_units}
+                onChange={(e) => set("rented_units", Number(e.target.value) || 0)}
+              />
+            </Field>
+          )}
         </div>
       </Group>
 

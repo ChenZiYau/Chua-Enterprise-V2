@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 import {
   MONTHS,
   MONTHS_FULL,
@@ -104,12 +105,8 @@ export default function InvoicesPage() {
   const [filterProp, setFilterProp] = useState("all");
   const [filterUnit, setFilterUnit] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterGenerated, setFilterGenerated] = useState<"all" | "yes" | "no">(
-    "all"
-  );
   const [viewing, setViewing] = useState<RevenueEntry | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
   const confirm = useConfirm();
 
   const unitOptions =
@@ -139,13 +136,6 @@ export default function InvoicesPage() {
       .filter((e) => filterProp === "all" || e.property_id === filterProp)
       .filter((e) => filterUnit === "all" || e.unit_id === filterUnit)
       .filter((e) => filterStatus === "all" || e.payment_status === filterStatus)
-      .filter((e) =>
-        filterGenerated === "all"
-          ? true
-          : filterGenerated === "yes"
-            ? e.invoice_generated
-            : !e.invoice_generated
-      )
       .filter((e) => {
         if (!q) return true;
         const prop = visibleProperties.find((p) => p.id === e.property_id);
@@ -172,7 +162,6 @@ export default function InvoicesPage() {
     filterProp,
     filterUnit,
     filterStatus,
-    filterGenerated,
     visibleProperties,
     getUnit,
   ]);
@@ -182,40 +171,8 @@ export default function InvoicesPage() {
     .filter((e) => e.payment_status !== "paid")
     .reduce((s, e) => s + e.total_amount, 0);
 
-  async function bulkGenerate() {
-    const pending = filtered.filter((e) => !e.invoice_generated);
-    if (pending.length === 0) {
-      await confirm({
-        title: "Nothing to generate",
-        message: "There are no ungenerated invoices in the current view.",
-        confirmLabel: "OK",
-        cancelLabel: "Close",
-      });
-      return;
-    }
-    const { confirmed } = await confirm({
-      title: "Generate invoices",
-      message: `Mark ${pending.length} invoice${pending.length === 1 ? "" : "s"} as generated? This is saved back to Notion.`,
-      confirmLabel: "Generate",
-    });
-    if (!confirmed) return;
-    setWorking(true);
-    setActionError(null);
-    try {
-      await Promise.all(
-        pending.map((e) =>
-          updateRevenueEntry(e.id, {
-            invoice_generated: true,
-            invoice_number: invoiceNumber(e),
-          })
-        )
-      );
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not generate invoices in Notion.");
-    } finally {
-      setWorking(false);
-    }
-  }
+  const resetKey = `${fromMonth}|${toMonth}|${search}|${filterProp}|${filterUnit}|${filterStatus}`;
+  const { page, setPage, totalPages, total, pageSize, pageItems } = usePagination(filtered, 10, resetKey);
 
   function propertyName(entry: RevenueEntry) {
     return visibleProperties.find((p) => p.id === entry.property_id)?.name ?? entry.property_id;
@@ -317,17 +274,9 @@ export default function InvoicesPage() {
             Invoices
           </h2>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-            Tenant invoices generated from rental revenue entries.
+            Auto-generated from rental revenue entries — ready to view, download, or send.
           </p>
         </div>
-        <button
-          type="button"
-          className="ui-btn ui-btn-primary"
-          onClick={bulkGenerate}
-          disabled={working}
-        >
-          {working ? "Generating..." : "+ Generate Invoices"}
-        </button>
       </div>
 
       {actionError && (
@@ -404,18 +353,6 @@ export default function InvoicesPage() {
           ]}
         />
 
-        <Select
-          className="w-auto min-w-[150px]"
-          ariaLabel="Filter by invoice state"
-          value={filterGenerated}
-          onChange={(v) => setFilterGenerated(v as "all" | "yes" | "no")}
-          options={[
-            { value: "all", label: "All Invoices" },
-            { value: "yes", label: "Generated" },
-            { value: "no", label: "Not Generated" },
-          ]}
-        />
-
         <div className="ml-auto flex items-center gap-4 text-sm font-semibold">
           <span style={{ color: "var(--danger)" }}>
             Outstanding: {fmt(totalOutstanding)}
@@ -431,7 +368,7 @@ export default function InvoicesPage() {
         <div className="ui-card p-12 text-center">
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             No invoices found. Enter rental revenue first - invoices are
-            generated from revenue entries.
+            auto-generated from revenue entries.
           </p>
         </div>
       ) : (
@@ -461,16 +398,13 @@ export default function InvoicesPage() {
                   Status
                 </th>
                 <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
-                  Invoice
-                </th>
-                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
                   Delivery
                 </th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((entry) => {
+              {pageItems.map((entry) => {
                 const prop = visibleProperties.find(
                   (p) => p.id === entry.property_id
                 );
@@ -534,15 +468,6 @@ export default function InvoicesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {entry.invoice_generated ? (
-                        <span className="ui-chip ui-chip-success text-xs">
-                          &#10003; Generated
-                        </span>
-                      ) : (
-                        <span className="ui-chip text-xs">Pending</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-center">
                       {entry.invoice_sent ? (
                         <span className="ui-chip ui-chip-success text-xs">
                           Sent{entry.invoice_sent_at ? ` ${entry.invoice_sent_at}` : ""}
@@ -556,7 +481,7 @@ export default function InvoicesPage() {
                         <button
                           type="button"
                           onClick={() => setViewing(entry)}
-                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
                           title="View"
                           style={{ color: "var(--text-muted)" }}
                         >
@@ -577,7 +502,7 @@ export default function InvoicesPage() {
                         <button
                           type="button"
                           onClick={() => downloadInvoice(entry)}
-                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
                           title="Download PDF"
                           style={{ color: "var(--accent)" }}
                         >
@@ -590,7 +515,7 @@ export default function InvoicesPage() {
                         <button
                           type="button"
                           onClick={() => sendInvoice(entry)}
-                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
                           title="Send invoice"
                           style={{ color: entry.invoice_sent ? "var(--success)" : "var(--text-muted)" }}
                         >
@@ -598,59 +523,6 @@ export default function InvoicesPage() {
                             <path d="M22 2 11 13" />
                             <path d="m22 2-7 20-4-9-9-4Z" />
                           </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setActionError(null);
-                            try {
-                              await updateRevenueEntry(entry.id, {
-                                invoice_generated: !entry.invoice_generated,
-                                invoice_number: entry.invoice_generated ? null : invoiceNumber(entry),
-                              });
-                            } catch (err) {
-                              setActionError(err instanceof Error ? err.message : "Could not update invoice in Notion.");
-                            }
-                          }}
-                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
-                          title={
-                            entry.invoice_generated
-                              ? "Mark as not generated"
-                              : "Mark as generated"
-                          }
-                          style={{
-                            color: entry.invoice_generated
-                              ? "var(--warning)"
-                              : "var(--success)",
-                          }}
-                        >
-                          {entry.invoice_generated ? (
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                          ) : (
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          )}
                         </button>
                       </div>
                     </td>
@@ -677,11 +549,22 @@ export default function InvoicesPage() {
                 >
                   {fmt(totalBilled)}
                 </td>
-                <td colSpan={4} />
+                <td colSpan={3} />
               </tr>
             </tfoot>
           </table>
         </div>
+      )}
+
+      {filtered.length > 0 && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPage={setPage}
+          unit="invoice"
+        />
       )}
 
       {viewing && (

@@ -33,10 +33,12 @@ export function PropertyCard({ property }: { property: Property }) {
   const [imgSrc, setImgSrc] = useState(property.image_url || PROPERTY_FALLBACK_IMAGE);
 
   const isInactive = property.status === "inactive";
+  const isWhole = property.rental_model === "whole_unit";
   const total = property.total_units || 0;
   const rented = property.rented_units || 0;
   const occPct = total > 0 ? Math.round((rented / total) * 100) : 0;
-  const unitWord = property.rental_model === "whole_unit" ? "unit" : "rooms";
+  const isOccupied = rented > 0;
+  const unitWord = isWhole ? "unit" : "rooms";
 
   const revenue = property.ytd_revenue ?? 0;
   const expenses = property.ytd_expenses ?? 0;
@@ -62,22 +64,17 @@ export function PropertyCard({ property }: { property: Property }) {
           className="w-full h-full object-cover"
           onError={() => setImgSrc(PROPERTY_FALLBACK_IMAGE)}
         />
-        <div className="absolute top-3 left-3">
-          <span
-            className="ui-chip"
-            style={{ background: "rgba(15,17,22,0.72)", color: "#fff" }}
-          >
-            {RENTAL_MODEL_LABEL[property.rental_model]}
-          </span>
-        </div>
-        <div className="absolute top-3 right-3">
+      </div>
+
+      <div className="p-5 flex flex-col gap-4 flex-1">
+        {/* Labels live in the body (not over the image) so they stay legible */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="ui-chip">{RENTAL_MODEL_LABEL[property.rental_model]}</span>
           <span className={"ui-chip " + statusChipClass(property.status)}>
             {STATUS_LABEL[property.status]}
           </span>
         </div>
-      </div>
 
-      <div className="p-5 flex flex-col gap-4 flex-1">
         <div className="min-w-0">
           <h3
             className="text-base font-semibold truncate"
@@ -90,25 +87,36 @@ export function PropertyCard({ property }: { property: Property }) {
           </p>
         </div>
 
-        <div>
-          <div className="flex items-center justify-between text-xs mb-1.5">
-            <span style={{ color: "var(--text-secondary)" }}>
-              {rented} of {total} {unitWord} rented
-            </span>
-            <span className="font-semibold" style={{ color: "var(--text-primary)" }}>
-              {occPct}%
+        {isWhole ? (
+          /* Whole unit is let as one — occupancy ratios are meaningless, so just
+             show whether it is occupied or available. */
+          <div className="flex items-center justify-between text-xs">
+            <span style={{ color: "var(--text-secondary)" }}>Whole unit</span>
+            <span className={"ui-chip " + (isOccupied ? "ui-chip-success" : "ui-chip-warning")}>
+              {isOccupied ? "Occupied" : "Available"}
             </span>
           </div>
-          <div
-            className="h-1.5 w-full rounded-full overflow-hidden"
-            style={{ background: "var(--surface-subtle)" }}
-          >
+        ) : (
+          <div>
+            <div className="flex items-center justify-between text-xs mb-1.5">
+              <span style={{ color: "var(--text-secondary)" }}>
+                {rented} of {total} {unitWord} rented
+              </span>
+              <span className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                {occPct}%
+              </span>
+            </div>
             <div
-              className="h-full rounded-full"
-              style={{ width: `${occPct}%`, background: "var(--accent)" }}
-            />
+              className="h-1.5 w-full rounded-full overflow-hidden"
+              style={{ background: "var(--surface-subtle)" }}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${occPct}%`, background: "var(--accent)" }}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div
           className="grid grid-cols-3 gap-3 pt-3 mt-auto"

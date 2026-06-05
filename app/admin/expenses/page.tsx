@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
 import {
   MONTHS,
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABEL,
   type ExpenseCategory,
+  type ExpenseEntry,
 } from "@/types/rental";
 
 const CUR_YEAR = new Date().getFullYear();
@@ -37,7 +39,7 @@ function fmt(value: number) {
 }
 
 export default function ExpensesPage() {
-  const { expenseEntries, visibleProperties, deleteExpenseEntry } = useRental();
+  const { expenseEntries, visibleProperties, deleteExpenseEntry, updateExpenseEntry } = useRental();
   const confirm = useConfirm();
 
   const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
@@ -46,6 +48,7 @@ export default function ExpensesPage() {
   const [filterProp, setFilterProp] = useState("all");
   const [filterCategory, setFilterCategory] = useState<ExpenseCategory | "all">("all");
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<ExpenseEntry | null>(null);
 
   const filtered = useMemo(() => {
     const from = parseMonthInput(fromMonth);
@@ -89,6 +92,9 @@ export default function ExpensesPage() {
   ]);
 
   const totalExpenses = filtered.reduce((s, e) => s + e.amount, 0);
+
+  const resetKey = `${fromMonth}|${toMonth}|${search}|${filterProp}|${filterCategory}`;
+  const { page, setPage, totalPages, total, pageSize, pageItems } = usePagination(filtered, 10, resetKey);
 
   async function handleDelete(id: string, label: string) {
     const { confirmed } = await confirm({
@@ -219,7 +225,7 @@ export default function ExpensesPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((entry) => {
+              {pageItems.map((entry) => {
                 const prop = visibleProperties.find(
                   (p) => p.id === entry.property_id
                 );
@@ -291,29 +297,43 @@ export default function ExpensesPage() {
                       {fmt(entry.amount)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        title="Delete"
-                        onClick={() => handleDelete(entry.id, label)}
-                        className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)] ml-auto"
-                        style={{ color: "var(--danger)" }}
-                      >
-                        <svg
-                          width="13"
-                          height="13"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          title="Edit"
+                          onClick={() => setEditing(entry)}
+                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
+                          style={{ color: "var(--text-muted)" }}
                         >
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                          <path d="M10 11v6M14 11v6" />
-                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                        </svg>
-                      </button>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete"
+                          onClick={() => handleDelete(entry.id, label)}
+                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
+                          style={{ color: "var(--danger)" }}
+                        >
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -345,8 +365,144 @@ export default function ExpensesPage() {
         </div>
       )}
 
+      {filtered.length > 0 && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPage={setPage}
+          unit="entry"
+          unitPlural="entries"
+        />
+      )}
+
       {/* Add Expense - same itemized drawer used on the property page */}
       <ExpenseEntryDrawer open={addOpen} onClose={() => setAddOpen(false)} />
+
+      {/* Edit a single expense entry */}
+      {editing && (
+        <EditExpenseDrawer
+          entry={editing}
+          propertyName={visibleProperties.find((p) => p.id === editing.property_id)?.name ?? "Expense"}
+          onClose={() => setEditing(null)}
+          onSave={async (patch) => {
+            await updateExpenseEntry(editing.id, patch);
+            setEditing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditExpenseDrawer({
+  entry,
+  propertyName,
+  onClose,
+  onSave,
+}: {
+  entry: ExpenseEntry;
+  propertyName: string;
+  onClose: () => void;
+  onSave: (patch: Partial<ExpenseEntry>) => Promise<void>;
+}) {
+  const [category, setCategory] = useState<ExpenseCategory>(entry.category);
+  const [customCategory, setCustomCategory] = useState(entry.custom_category ?? "");
+  const [amount, setAmount] = useState(String(entry.amount));
+  const [description, setDescription] = useState(entry.description ?? "");
+  const [isRecurring, setIsRecurring] = useState(!!entry.is_recurring);
+  const [isIrregular, setIsIrregular] = useState(!!entry.is_irregular);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)]";
+  const inputStyle: React.CSSProperties = { borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" };
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) {
+      setError("Enter an amount greater than 0.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({
+        category,
+        custom_category: category === "other" ? customCategory.trim() || null : null,
+        amount: amt,
+        description: description.trim() || null,
+        is_recurring: isRecurring,
+        is_irregular: isIrregular,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the expense.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-md h-full overflow-y-auto flex flex-col"
+        style={{ background: "var(--surface)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between p-6 border-b sticky top-0 z-10" style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}>
+          <div>
+            <p className="text-xs uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Edit expense</p>
+            <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>{propertyName}</h3>
+            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+              {MONTHS[entry.month - 1]} {entry.year}
+            </p>
+          </div>
+          <button type="button" className="ui-btn" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="p-6 flex flex-col gap-4 flex-1 text-sm">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-faint)" }}>Category</span>
+            <Select
+              value={category}
+              onChange={(v) => setCategory(v as ExpenseCategory)}
+              options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: EXPENSE_CATEGORY_LABEL[c] }))}
+            />
+          </label>
+          {category === "other" && (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-faint)" }}>Custom category</span>
+              <input className={inputCls} style={inputStyle} value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} />
+            </label>
+          )}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-faint)" }}>Amount (RM)</span>
+            <input type="number" inputMode="decimal" min={0} step="0.01" className={inputCls} style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-faint)" }}>Description</span>
+            <textarea rows={3} className={inputCls + " resize-y"} style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+              Recurring
+            </label>
+            <label className="flex items-center gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+              <input type="checkbox" checked={isIrregular} onChange={(e) => setIsIrregular(e.target.checked)} />
+              Irregular
+            </label>
+          </div>
+        </div>
+
+        <div className="p-4 border-t flex justify-end gap-2 sticky bottom-0" style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}>
+          {error && <p className="mr-auto self-center text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
+          <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
+          <button type="submit" className="ui-btn ui-btn-primary" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</button>
+        </div>
+      </form>
     </div>
   );
 }

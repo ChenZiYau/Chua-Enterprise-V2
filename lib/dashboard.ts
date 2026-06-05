@@ -35,11 +35,60 @@ export type LeaseAlert = {
   daysLeft: number;
 };
 
+export type UnitDetail = {
+  id: string;
+  property: string;
+  unit: string; // unit / room name
+  label: string; // short label
+  isRented: boolean;
+  tenant: string; // tenant name, "" when vacant/unknown
+  rentalRate: number;
+};
+
+export type RentEntry = {
+  id: string;
+  tenant: string;
+  property: string;
+  unit: string; // full "Property - Unit" label
+  amount: number;
+  status: "paid" | "pending" | "overdue";
+  period: string; // e.g. "Jun 2026"
+  daysOverdue: number;
+  // tenant contact (for the dashboard detail view)
+  phone: string;
+  email: string;
+  leaseEnd: string;
+};
+
+export type MaintItem = {
+  id: string;
+  issue: string;
+  property: string;
+  unit: string; // full "Property - Unit" label
+  tenant: string;
+  category: string;
+  priority: string; // raw priority value
+  status: string; // raw status value
+  reason: "urgent" | "overdue";
+  reportedDate: string;
+  dueDate: string;
+  assignedTo: string;
+  description: string;
+};
+
 export type PropertyHealth = {
+  id: string;
   name: string;
   rentalModel: string; // raw Notion value: "whole_unit" | "room_rental"
   modelLabel: string; // "Whole Unit" | "Room Rental"
+  isWhole: boolean; // true when the whole property is let as one unit
   unitWord: string; // "unit"/"units" | "room"/"rooms"
+  address: string;
+  city: string;
+  state: string;
+  propertyType: string;
+  imageUrl: string;
+  description: string;
   totalUnits: number;
   rentedUnits: number;
   occupancyPct: number;
@@ -49,6 +98,7 @@ export type PropertyHealth = {
   urgentIssues: number;
   status: "Good" | "Attention" | "Critical";
   reason: string;
+  units: UnitDetail[];
 };
 
 export type Activity = {
@@ -109,11 +159,19 @@ export type DashboardData = {
     expired: number;
   };
   propertyHealth: PropertyHealth[];
+  units: UnitDetail[];
+  vacantUnitsList: UnitDetail[];
+  rentRoster: RentEntry[];
+  urgentMaintenanceList: MaintItem[];
   activity: Activity[];
   recentPayments: RecentPayment[];
 };
 
 const LEASE_SOON_DAYS = 30;
+const MONTHS_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 function lc(s: string) {
   return (s ?? "").trim().toLowerCase();
@@ -188,6 +246,14 @@ export function buildDashboard(input: {
   }
   const nameFor = (property: string, unit: string) =>
     tenantByUnit.get(`${property}|${unit}`) || (unit ? `${property} - ${unit}` : property);
+
+  // ---- tenant contact lookup by property|unit (for dashboard detail views) ----
+  const tenantDetailByUnit = new Map<string, TenantRow>();
+  for (const t of tenants) {
+    if (t.unit) tenantDetailByUnit.set(`${t.property}|${t.unit}`, t);
+  }
+  const tenantDetailFor = (property: string, unit: string) =>
+    tenantDetailByUnit.get(`${property}|${unit}`);
   const unitLabel = (property: string, unit: string) =>
     unit ? `${property} - ${unit}` : property || "-";
 
@@ -286,16 +352,30 @@ export function buildDashboard(input: {
       if (st !== "completed") urgent += 1;
     }
   }
-  const topUrgent: UrgentMaintenance[] = openMaint
+  const urgentMaintenanceList: MaintItem[] = openMaint
     .filter((m) => lc(m.priority) === "urgent" || isMaintOverdue(m))
     .sort((a, b) => Number(isMaintOverdue(b)) - Number(isMaintOverdue(a)))
-    .slice(0, 4)
     .map((m) => ({
       id: m.id,
       issue: m.name || m.category || "Maintenance issue",
+      property: m.property,
       unit: unitLabel(m.property, m.unit),
-      reason: lc(m.priority) === "urgent" ? "urgent" : "overdue",
+      tenant: m.tenant || nameFor(m.property, m.unit),
+      category: m.category || "",
+      priority: m.priority || "",
+      status: m.status || "",
+      reason: (lc(m.priority) === "urgent" ? "urgent" : "overdue") as "urgent" | "overdue",
+      reportedDate: m.reportedDate || "",
+      dueDate: m.dueDate || "",
+      assignedTo: m.assignedTo || "",
+      description: m.description || "",
     }));
+  const topUrgent: UrgentMaintenance[] = urgentMaintenanceList.slice(0, 4).map((m) => ({
+    id: m.id,
+    issue: m.issue,
+    unit: m.unit,
+    reason: m.reason,
+  }));
 
   // ---- lease alerts ----
   const leaseRanked = tenants
@@ -314,9 +394,67 @@ export function buildDashboard(input: {
     }));
   const expired = leaseRanked.filter((x) => x.daysLeft < 0).length;
 
+  // ---- unit-level occupancy detail ----
+  const unitDetails: UnitDetail[] = units
+    .map((u) => ({
+      id: u.id,
+      property: u.property,
+      unit: u.name,
+      label: u.label || u.name,
+      isRented: u.isRented,
+      tenant: u.tenantName || "",
+      rentalRate: u.rentalRate,
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.isRented) - Number(b.isRented) ||
+        a.property.localeCompare(b.property) ||
+        a.unit.localeCompare(b.unit)
+    );
+  const vacantUnitsList = unitDetails.filter((u) => !u.isRented);
+
+  // ---- rent roster (this-month rows + any overdue), one card per tenant/period ----
+  const statusOrder = { overdue: 0, pending: 1, paid: 2 } as const;
+  const rentRoster: RentEntry[] = revenue
+    .filter((r) => {
+      if (r.totalAmount <= 0) return false;
+      const s = lc(r.paymentStatus);
+      const p = revPeriod(r);
+      const thisMonth = p.year === curYear && p.month === curMonth;
+      return thisMonth || s === "overdue";
+    })
+    .map((r) => {
+      const s = lc(r.paymentStatus);
+      const status: RentEntry["status"] =
+        s === "paid" ? "paid" : s === "overdue" ? "overdue" : "pending";
+      const p = revPeriod(r);
+      const ref = r.paymentDate || (p.year ? `${p.year}-${String(p.month).padStart(2, "0")}-28` : "");
+      const td = tenantDetailFor(r.property, r.unit);
+      return {
+        id: r.id,
+        tenant: nameFor(r.property, r.unit),
+        property: r.property,
+        unit: unitLabel(r.property, r.unit),
+        amount: r.totalAmount,
+        status,
+        period: p.year ? `${MONTHS_SHORT[(p.month || 1) - 1]} ${p.year}` : "",
+        daysOverdue: status === "overdue" ? daysSince(ref, today) : 0,
+        phone: td?.phone ?? "",
+        email: td?.email ?? "",
+        leaseEnd: td?.leaseEnd ?? "",
+      };
+    })
+    .sort(
+      (a, b) =>
+        statusOrder[a.status] - statusOrder[b.status] ||
+        b.daysOverdue - a.daysOverdue ||
+        b.amount - a.amount
+    );
+
   // ---- property health ----
   const propertyHealth: PropertyHealth[] = properties.map((p) => {
     const propUnits = units.filter((u) => u.property === p.name);
+    const propUnitDetails = unitDetails.filter((u) => u.property === p.name);
     const total = propUnits.length || p.totalUnits || 0;
     const rented = propUnits.length
       ? propUnits.filter((u) => u.isRented).length
@@ -355,10 +493,18 @@ export function buildDashboard(input: {
     else reason = "Fully occupied with no urgent issues";
 
     return {
+      id: p.id,
       name: p.name,
       rentalModel: p.rentalModel,
       modelLabel,
+      isWhole,
       unitWord,
+      address: p.address,
+      city: p.city,
+      state: p.state,
+      propertyType: p.propertyType,
+      imageUrl: p.imageUrl,
+      description: p.description,
       totalUnits: total,
       rentedUnits: rented,
       occupancyPct: occ,
@@ -368,6 +514,7 @@ export function buildDashboard(input: {
       urgentIssues,
       status,
       reason,
+      units: propUnitDetails,
     };
   });
   const statusRank = { Critical: 0, Attention: 1, Good: 2 } as const;
@@ -476,6 +623,10 @@ export function buildDashboard(input: {
     maintenance: { urgent, pending: pendingMaint, inProgress, completed, topUrgent },
     leaseAlerts: { endingSoon, expired },
     propertyHealth,
+    units: unitDetails,
+    vacantUnitsList,
+    rentRoster,
+    urgentMaintenanceList,
     activity,
     recentPayments,
   };

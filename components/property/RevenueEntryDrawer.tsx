@@ -303,34 +303,47 @@ export function RevenueEntryDrawer({
             </div>
           </div>
 
-          {/* Month / Year */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&lt;</button>
-              <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 38, textAlign: "center" }}>{year}</span>
-              <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&gt;</button>
-            </div>
-            <div className="flex-1">
-              <Select
-                value={String(monthIdx)}
-                onChange={(v) => setMonthIdx(Number(v))}
-                options={MONTHS_FULL.map((m, i) => ({ value: String(i), label: m }))}
-              />
-            </div>
-          </div>
-
-          {existingEntry && (
-            <div className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-xs" style={{ background: "rgba(224,162,61,0.10)", border: "1px solid var(--warning)", color: "var(--warning)" }}>
-              <span className="mt-px">&#9888;</span>
-              <span>An entry already exists for {MONTHS_FULL[monthIdx]} {year}. Saving will update it.</span>
-            </div>
-          )}
-
           {unit && (
             <div className="grid grid-cols-3 gap-2 rounded-lg px-3 py-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
               <MiniStat label="Tenant" value={unit.tenant_name ?? "-"} />
               <MiniStat label="Base rent" value={unit.rental_rate ? `RM ${unit.rental_rate}` : "-"} />
               <MiniStat label="Free kWh" value={`${unit.electricity_free_units}`} />
+            </div>
+          )}
+
+          {/* Year status grid - the billing month is chosen here (replaces the
+              old year/month selector). The header keeps year navigation. */}
+          {unitId && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>{year} status</p>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>&lt;</button>
+                  <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 34, textAlign: "center" }}>{year}</span>
+                  <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>&gt;</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-6 gap-1.5">
+                {MONTHS.map((m, i) => {
+                  const entry = yearEntries.find((e) => e.month === i + 1);
+                  const isCurrent = i === monthIdx;
+                  return (
+                    <button key={m} type="button" onClick={() => setMonthIdx(i)} className="rounded-md py-1.5 text-center text-[11px] font-medium transition"
+                      style={{
+                        background: isCurrent ? "var(--accent)" : entry ? "rgba(47,158,111,0.12)" : "var(--surface-subtle)",
+                        color: isCurrent ? "#fff" : entry ? "var(--success)" : "var(--text-secondary)",
+                        border: `1px solid ${isCurrent ? "var(--accent)" : entry ? "var(--success)" : "var(--border-soft)"}`,
+                      }}>{m}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {existingEntry && (
+            <div className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-xs" style={{ background: "rgba(224,162,61,0.10)", border: "1px solid var(--warning)", color: "var(--warning)" }}>
+              <span className="mt-px">&#9888;</span>
+              <span>An entry already exists for {MONTHS_FULL[monthIdx]} {year}. Saving will update it.</span>
             </div>
           )}
 
@@ -407,27 +420,6 @@ export function RevenueEntryDrawer({
                 value={notes} onChange={onText(setNotes)} />
             </div>
           </div>
-
-          {/* Year status grid */}
-          {unitId && (
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-faint)" }}>{year} status</p>
-              <div className="grid grid-cols-6 gap-1.5">
-                {MONTHS.map((m, i) => {
-                  const entry = yearEntries.find((e) => e.month === i + 1);
-                  const isCurrent = i === monthIdx;
-                  return (
-                    <button key={m} type="button" onClick={() => setMonthIdx(i)} className="rounded-md py-1.5 text-center text-[11px] font-medium transition"
-                      style={{
-                        background: isCurrent ? "var(--accent)" : entry ? "rgba(47,158,111,0.12)" : "var(--surface-subtle)",
-                        color: isCurrent ? "#fff" : entry ? "var(--success)" : "var(--text-secondary)",
-                        border: `1px solid ${isCurrent ? "var(--accent)" : entry ? "var(--success)" : "var(--border-soft)"}`,
-                      }}>{m}</button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {saved && (
             <div className="rounded-lg px-4 py-2.5 flex items-center gap-2" style={{ background: "rgba(47,158,111,0.10)", border: "1px solid var(--success)" }}>

@@ -13,7 +13,7 @@ export default function NewPropertyPage() {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-7 max-w-4xl">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-7">
       <div>
         <Link
           href="/admin/properties"

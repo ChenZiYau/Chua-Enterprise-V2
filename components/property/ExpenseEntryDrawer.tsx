@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { Select } from "@/components/ui/Select";
 import {
+  MONTHS,
   MONTHS_FULL,
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABEL,
@@ -50,7 +51,7 @@ export function ExpenseEntryDrawer({
   propertyName?: string;
   propertyId?: string;
 }) {
-  const { addExpenseEntry, getPropertyYTD, visibleProperties } = useRental();
+  const { addExpenseEntry, getPropertyYTD, getExpensesForProperty, visibleProperties } = useRental();
   const now = new Date();
 
   const [view, setView] = useState<View>("normal");
@@ -205,6 +206,7 @@ export function ExpenseEntryDrawer({
 
   const widthClass = view === "expanded" ? "max-w-2xl" : "max-w-md";
   const ytd = activePropertyId ? getPropertyYTD(activePropertyId, year) : { revenue: 0, expenses: 0, net: 0 };
+  const yearExpenses = activePropertyId ? getExpensesForProperty(activePropertyId, year) : [];
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -251,19 +253,29 @@ export function ExpenseEntryDrawer({
           </div>
         )}
 
-        {/* Month / Year */}
-        <div className="px-6 pt-4 pb-3 flex items-center gap-3" style={{ borderBottom: "1px solid var(--border-soft)" }}>
-          <div className="flex items-center gap-1.5">
-            <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&lt;</button>
-            <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 38, textAlign: "center" }}>{year}</span>
-            <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}>&gt;</button>
+        {/* Year status grid - pick the billing month here (matches the Revenue drawer) */}
+        <div className="px-6 pt-4 pb-4" style={{ borderBottom: "1px solid var(--border-soft)" }}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>{year} status</p>
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>&lt;</button>
+              <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 34, textAlign: "center" }}>{year}</span>
+              <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>&gt;</button>
+            </div>
           </div>
-          <div className="flex-1">
-            <Select
-              value={String(monthIdx)}
-              onChange={(v) => setMonthIdx(Number(v))}
-              options={MONTHS_FULL.map((m, i) => ({ value: String(i), label: m }))}
-            />
+          <div className="grid grid-cols-6 gap-1.5">
+            {MONTHS.map((m, i) => {
+              const hasEntry = yearExpenses.some((e) => e.month === i + 1);
+              const isCurrent = i === monthIdx;
+              return (
+                <button key={m} type="button" onClick={() => setMonthIdx(i)} className="rounded-md py-1.5 text-center text-[11px] font-medium transition"
+                  style={{
+                    background: isCurrent ? "var(--accent)" : hasEntry ? "rgba(47,158,111,0.12)" : "var(--surface-subtle)",
+                    color: isCurrent ? "#fff" : hasEntry ? "var(--success)" : "var(--text-secondary)",
+                    border: `1px solid ${isCurrent ? "var(--accent)" : hasEntry ? "var(--success)" : "var(--border-soft)"}`,
+                  }}>{m}</button>
+              );
+            })}
           </div>
         </div>
 

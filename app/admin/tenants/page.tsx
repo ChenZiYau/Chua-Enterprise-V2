@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 import {
   MONTHS,
   PAYMENT_STATUS_LABEL,
@@ -70,6 +71,15 @@ const STATUS_COLORS: Record<PaymentStatus, { bg: string; text: string }> = {
   overdue: { bg: "rgba(211,84,84,0.10)", text: "var(--danger)" },
 };
 
+/** Glow tone for a tenant card: paid → green, overdue → red, anything else
+ *  outstanding (pending/partial) → orange. Null payment status → no glow. */
+const STATUS_GLOW: Record<PaymentStatus, string> = {
+  paid: "ui-glow-green",
+  partial: "ui-glow-orange",
+  pending: "ui-glow-orange",
+  overdue: "ui-glow-red",
+};
+
 type DrawerState =
   | { mode: "closed" }
   | { mode: "create" }
@@ -92,7 +102,7 @@ export default function TenantsPage() {
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const confirm = useConfirm();
 
   // Restore the preferred view on mount (kept in an effect to avoid SSR/hydration
@@ -137,6 +147,12 @@ export default function TenantsPage() {
       })
       .sort((a, b) => a.tenant.name.localeCompare(b.tenant.name));
   }, [tenants, visibleProperties, getUnit, search, filterProp, revenueEntries]);
+
+  const { page, setPage, totalPages, total, pageSize, pageItems } = usePagination(
+    rows,
+    10,
+    `${search}|${filterProp}`
+  );
 
   async function handleDelete(t: Tenant) {
     const { confirmed } = await confirm({
@@ -239,7 +255,7 @@ export default function TenantsPage() {
       ) : viewMode === "grid" ? (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 
-          {rows.map(({ tenant, unit, prop, payment, lease }) => (
+          {pageItems.map(({ tenant, unit, prop, payment, lease }) => (
             <TenantCard
               key={tenant.id}
               tenant={tenant}
@@ -266,7 +282,7 @@ export default function TenantsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ tenant, unit, prop }) => (
+              {pageItems.map(({ tenant, unit, prop }) => (
                 <tr
                   key={tenant.id}
                   onClick={() => setDrawer({ mode: "view", tenant })}
@@ -295,7 +311,7 @@ export default function TenantsPage() {
                         e.stopPropagation();
                         setDrawer({ mode: "edit", tenant });
                       }}
-                      className="w-7 h-7 rounded inline-flex items-center justify-center hover:bg-[var(--surface-subtle)]"
+                      className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
                       title="Edit"
                       style={{ color: "var(--text-muted)" }}
                     >
@@ -310,7 +326,7 @@ export default function TenantsPage() {
                         e.stopPropagation();
                         handleDelete(tenant);
                       }}
-                      className="w-7 h-7 rounded inline-flex items-center justify-center hover:bg-[var(--surface-subtle)] ml-1"
+                      className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)] ml-1"
                       title="Delete"
                       style={{ color: "var(--danger)" }}
                     >
@@ -326,6 +342,17 @@ export default function TenantsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {rows.length > 0 && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPage={setPage}
+          unit="tenant"
+        />
       )}
 
       {drawer.mode === "view" && (
@@ -434,17 +461,6 @@ function ViewToggle({
   );
 }
 
-function Badge({ label, bg, text }: { label: string; bg: string; text: string }) {
-  return (
-    <span
-      className="text-[11px] font-medium px-2 py-0.5 rounded-full"
-      style={{ background: bg, color: text }}
-    >
-      {label}
-    </span>
-  );
-}
-
 function TenantCard({
   tenant,
   unitLabel,
@@ -465,7 +481,10 @@ function TenantCard({
   return (
     <div
       onClick={onView}
-      className="ui-card p-4 flex flex-col gap-3 cursor-pointer transition-colors hover:bg-[var(--surface-muted)]"
+      className={
+        "ui-card p-4 flex flex-col gap-3 cursor-pointer transition hover:bg-[var(--surface-muted)] " +
+        (payment ? STATUS_GLOW[payment] : "")
+      }
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -483,7 +502,7 @@ function TenantCard({
               e.stopPropagation();
               onEdit();
             }}
-            className="w-7 h-7 rounded inline-flex items-center justify-center hover:bg-[var(--surface-subtle)]"
+            className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
             title="Edit"
             style={{ color: "var(--text-muted)" }}
           >
@@ -498,7 +517,7 @@ function TenantCard({
               e.stopPropagation();
               onDelete();
             }}
-            className="w-7 h-7 rounded inline-flex items-center justify-center hover:bg-[var(--surface-subtle)]"
+            className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
             title="Delete"
             style={{ color: "var(--danger)" }}
           >
@@ -518,27 +537,38 @@ function TenantCard({
         {tenant.lease_end ? <CardRow label="Lease end" value={tenant.lease_end} /> : null}
       </dl>
 
-      {(payment || lease) && (
-        <div
-          className="flex flex-wrap gap-2 pt-3 border-t"
-          style={{ borderColor: "var(--border-soft)" }}
-        >
-          {payment && (
-            <Badge
-              label={`Payment: ${PAYMENT_STATUS_LABEL[payment]}`}
-              bg={STATUS_COLORS[payment].bg}
-              text={STATUS_COLORS[payment].text}
-            />
-          )}
-          {lease && (
-            <Badge
-              label={`Lease: ${lease.label}`}
-              bg={LEASE_TONE_COLORS[lease.tone].bg}
-              text={LEASE_TONE_COLORS[lease.tone].text}
-            />
-          )}
+      {/* Footer split 50/50 — Payment status on the left, Lease status on the
+          right — so each gets the full half-width instead of a small chip. */}
+      <div
+        className="grid grid-cols-2 mt-auto pt-3 border-t"
+        style={{ borderColor: "var(--border-soft)" }}
+      >
+        <div className="pr-3 flex flex-col gap-1 min-w-0">
+          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+            Payment
+          </span>
+          <span
+            className="text-sm font-semibold truncate"
+            style={{ color: payment ? STATUS_COLORS[payment].text : "var(--text-faint)" }}
+          >
+            {payment ? PAYMENT_STATUS_LABEL[payment] : "—"}
+          </span>
         </div>
-      )}
+        <div
+          className="pl-3 flex flex-col gap-1 min-w-0"
+          style={{ borderLeft: "1px solid var(--border-soft)" }}
+        >
+          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+            Lease
+          </span>
+          <span
+            className="text-sm font-semibold truncate"
+            style={{ color: lease ? LEASE_TONE_COLORS[lease.tone].text : "var(--text-faint)" }}
+          >
+            {lease ? lease.label : "—"}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -585,10 +615,18 @@ function TenantDetailDrawer({
   const unit = tenant.unit_id ? getUnit(tenant.unit_id) : undefined;
   const prop = unit ? properties.find((p) => p.id === unit.property_id) : undefined;
 
-  const history = [...revenueEntries].sort((a, b) => {
-    if (a.year !== b.year) return b.year - a.year;
-    return b.month - a.month;
-  });
+  const [histStatus, setHistStatus] = useState<PaymentStatus | "all">("all");
+  const [histFrom, setHistFrom] = useState("");
+  const [histTo, setHistTo] = useState("");
+
+  const history = useMemo(
+    () =>
+      [...revenueEntries].sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+      }),
+    [revenueEntries]
+  );
 
   const totalPaid = history
     .filter((e) => e.payment_status === "paid")
@@ -596,6 +634,29 @@ function TenantDetailDrawer({
   const totalOutstanding = history
     .filter((e) => e.payment_status !== "paid")
     .reduce((s, e) => s + e.total_amount, 0);
+
+  const filteredHistory = useMemo(() => {
+    const key = (s: string) => {
+      if (!s) return null;
+      const [y, m] = s.split("-").map(Number);
+      return y && m ? y * 100 + m : null;
+    };
+    const from = key(histFrom);
+    const to = key(histTo);
+    return history.filter((e) => {
+      if (histStatus !== "all" && (e.payment_status ?? "pending") !== histStatus) return false;
+      const ek = e.year * 100 + e.month;
+      if (from && ek < from) return false;
+      if (to && ek > to) return false;
+      return true;
+    });
+  }, [history, histStatus, histFrom, histTo]);
+
+  const histPaging = usePagination(
+    filteredHistory,
+    6,
+    `${histStatus}|${histFrom}|${histTo}`
+  );
 
   return (
     <div
@@ -666,7 +727,7 @@ function TenantDetailDrawer({
           )}
 
           <section className="border-t pt-5" style={{ borderColor: "var(--border-soft)" }}>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <p className="text-xs uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
                 Payment History
               </p>
@@ -681,40 +742,104 @@ function TenantDetailDrawer({
                 No payment records for this tenant&apos;s unit yet.
               </p>
             ) : (
-              <div className="overflow-x-auto -mx-6">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr style={{ color: "var(--text-faint)" }}>
-                      <th className="text-left text-xs uppercase tracking-wider px-6 py-2">Period</th>
-                      <th className="text-right text-xs uppercase tracking-wider px-3 py-2">Amount</th>
-                      <th className="text-center text-xs uppercase tracking-wider px-6 py-2">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((e) => {
-                      const sc = STATUS_COLORS[e.payment_status ?? "pending"];
-                      return (
-                        <tr key={e.id} className="border-t" style={{ borderColor: "var(--border-soft)" }}>
-                          <td className="px-6 py-2" style={{ color: "var(--text-secondary)" }}>
-                            {MONTHS[e.month - 1]} {e.year}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: "var(--text-primary)" }}>
-                            {fmt(e.total_amount)}
-                          </td>
-                          <td className="px-6 py-2 text-center">
-                            <span
-                              className="text-xs font-medium px-2 py-0.5 rounded-full"
-                              style={{ background: sc.bg, color: sc.text }}
-                            >
-                              {PAYMENT_STATUS_LABEL[e.payment_status ?? "pending"]}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Filters: status + month range */}
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <Select
+                    className="w-auto min-w-[130px]"
+                    ariaLabel="Filter payment status"
+                    value={histStatus}
+                    onChange={(v) => setHistStatus(v as PaymentStatus | "all")}
+                    options={[
+                      { value: "all", label: "All Statuses" },
+                      { value: "paid", label: "Paid" },
+                      { value: "partial", label: "Partial" },
+                      { value: "pending", label: "Pending" },
+                      { value: "overdue", label: "Overdue" },
+                    ]}
+                  />
+                  <input
+                    type="month"
+                    className="ui-input w-auto"
+                    value={histFrom}
+                    onChange={(e) => setHistFrom(e.target.value)}
+                    aria-label="History from month"
+                  />
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
+                  <input
+                    type="month"
+                    className="ui-input w-auto"
+                    value={histTo}
+                    onChange={(e) => setHistTo(e.target.value)}
+                    aria-label="History to month"
+                  />
+                  {(histStatus !== "all" || histFrom || histTo) && (
+                    <button
+                      type="button"
+                      className="ui-btn"
+                      onClick={() => {
+                        setHistStatus("all");
+                        setHistFrom("");
+                        setHistTo("");
+                      }}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                {filteredHistory.length === 0 ? (
+                  <p className="text-sm py-6 text-center" style={{ color: "var(--text-muted)" }}>
+                    No payments match these filters.
+                  </p>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto -mx-6">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr style={{ color: "var(--text-faint)" }}>
+                            <th className="text-left text-xs uppercase tracking-wider px-6 py-2">Period</th>
+                            <th className="text-right text-xs uppercase tracking-wider px-3 py-2">Amount</th>
+                            <th className="text-center text-xs uppercase tracking-wider px-6 py-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {histPaging.pageItems.map((e) => {
+                            const sc = STATUS_COLORS[e.payment_status ?? "pending"];
+                            return (
+                              <tr key={e.id} className="border-t" style={{ borderColor: "var(--border-soft)" }}>
+                                <td className="px-6 py-2" style={{ color: "var(--text-secondary)" }}>
+                                  {MONTHS[e.month - 1]} {e.year}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: "var(--text-primary)" }}>
+                                  {fmt(e.total_amount)}
+                                </td>
+                                <td className="px-6 py-2 text-center">
+                                  <span
+                                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                                    style={{ background: sc.bg, color: sc.text }}
+                                  >
+                                    {PAYMENT_STATUS_LABEL[e.payment_status ?? "pending"]}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pagination
+                      className="mt-3"
+                      page={histPaging.page}
+                      totalPages={histPaging.totalPages}
+                      total={histPaging.total}
+                      pageSize={histPaging.pageSize}
+                      onPage={histPaging.setPage}
+                      unit="payment"
+                    />
+                  </>
+                )}
+              </>
             )}
           </section>
         </div>

@@ -92,7 +92,7 @@ export default function PropertyDetailPage({
   }
 
   return (
-    <div className="px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-8 max-w-6xl">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-8">
       <BackLink href="/admin/properties" label="Back to Properties" />
 
       {actionError && (
@@ -153,7 +153,15 @@ export default function PropertyDetailPage({
         className="grid grid-cols-2 md:grid-cols-4 gap-px rounded-xl overflow-hidden"
         style={{ background: "var(--border-soft)", border: "1px solid var(--border-soft)" }}
       >
-        <Stat label="Occupancy" value={`${occPct}%`} sub={`${rentedCount} of ${total} ${unitWord}`} />
+        {isWhole ? (
+          <Stat
+            label="Status"
+            value={rentedCount > 0 ? "Occupied" : "Vacant"}
+            valueColor={rentedCount > 0 ? "var(--success)" : "var(--warning)"}
+          />
+        ) : (
+          <Stat label="Occupancy" value={`${occPct}%`} sub={`${rentedCount} of ${total} ${unitWord}`} />
+        )}
         <Stat label={`Revenue ${curYear}`} value={formatMYR(ytd.revenue)} />
         <Stat label={`Expenses ${curYear}`} value={formatMYR(ytd.expenses)} />
         <Stat label="Net YTD" value={formatMYR(ytd.net)} valueColor={ytd.net >= 0 ? "var(--success)" : "var(--danger)"} />

@@ -240,6 +240,35 @@ body {
   }
 }
 
+/* Breathing highlight — draws the eye to an interactive KPI without shouting. */
+@keyframes ui-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 var(--breathe-color, var(--accent-ring)); }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}
+.ui-breathe {
+  animation: ui-breathe 2.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-breathe { animation: none; }
+}
+
+/* Glow tones for payment-status cards (paid / outstanding / overdue). */
+.ui-glow-green {
+  border-color: color-mix(in srgb, var(--success) 55%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 30%, transparent),
+    0 0 16px color-mix(in srgb, var(--success) 26%, transparent);
+}
+.ui-glow-orange {
+  border-color: color-mix(in srgb, var(--warning) 55%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 30%, transparent),
+    0 0 16px color-mix(in srgb, var(--warning) 28%, transparent);
+}
+.ui-glow-red {
+  border-color: color-mix(in srgb, var(--danger) 60%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 32%, transparent),
+    0 0 18px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
 @media print {
   body { background: white !important; color: black !important; }
   .no-print, header, aside, nav, button { display: none !important; }

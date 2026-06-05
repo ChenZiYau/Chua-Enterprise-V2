@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
 import {
   MONTHS,
@@ -125,6 +126,9 @@ export default function RevenuePage() {
   ]);
 
   const totalRevenue = filtered.reduce((s, e) => s + e.total_amount, 0);
+
+  const resetKey = `${fromMonth}|${toMonth}|${search}|${filterProp}|${filterUnit}|${filterStatus}`;
+  const { page, setPage, totalPages, total, pageSize, pageItems } = usePagination(filtered, 10, resetKey);
 
   async function handleDelete(id: string, label: string) {
     const { confirmed } = await confirm({
@@ -303,7 +307,7 @@ export default function RevenuePage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((entry) => {
+              {pageItems.map((entry) => {
                 const prop = visibleProperties.find(
                   (p) => p.id === entry.property_id
                 );
@@ -402,7 +406,7 @@ export default function RevenuePage() {
                         <button
                           type="button"
                           onClick={() => setEntry({ open: true, propertyId: entry.property_id, unitId: entry.unit_id, month: entry.month - 1, year: entry.year })}
-                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
                           title="Edit"
                           style={{ color: "var(--text-muted)" }}
                         >
@@ -415,7 +419,7 @@ export default function RevenuePage() {
                           type="button"
                           title="Delete"
                           onClick={() => handleDelete(entry.id, label)}
-                          className="w-7 h-7 rounded flex items-center justify-center transition hover:bg-[var(--surface-subtle)]"
+                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
                           style={{ color: "var(--danger)" }}
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -455,6 +459,18 @@ export default function RevenuePage() {
             </tfoot>
           </table>
         </div>
+      )}
+
+      {filtered.length > 0 && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPage={setPage}
+          unit="entry"
+          unitPlural="entries"
+        />
       )}
 
       {/* Enter / edit revenue - same drawer used on the property page */}

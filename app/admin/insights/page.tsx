@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useRental } from "@/context/RentalContext";
 import { MONTHS } from "@/types/rental";
 import { startOfDay, todayIso } from "@/lib/date";
+import { YearlyChart } from "@/components/admin/YearlyChart";
 
 function fmt(value: number) {
   return new Intl.NumberFormat("en-MY", {
@@ -51,6 +52,15 @@ export default function InsightsPage() {
     const revenueDelta = lastMonthRevenue
       ? Math.round(((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100)
       : null;
+
+    // --- Net profit this month (collected rent − expenses) ---
+    const collectedThisMonth = revenueEntries
+      .filter((e) => e.year === currentYear && e.month === currentMonth && e.payment_status === "paid")
+      .reduce((s, e) => s + e.total_amount, 0);
+    const expensesThisMonth = expenseEntries
+      .filter((e) => e.year === currentYear && e.month === currentMonth)
+      .reduce((s, e) => s + e.amount, 0);
+    const netProfit = collectedThisMonth - expensesThisMonth;
 
     // --- Occupancy snapshot ---
     const totalUnits = units.length;
@@ -133,6 +143,9 @@ export default function InsightsPage() {
       thisMonthRevenue,
       lastMonthRevenue,
       revenueDelta,
+      collectedThisMonth,
+      expensesThisMonth,
+      netProfit,
       occupancyPct,
       rentedUnits,
       totalUnits,
@@ -179,6 +192,13 @@ export default function InsightsPage() {
       {/* Trend KPIs */}
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <Stat
+          label="Net Profit (This Month)"
+          value={fmt(data.netProfit)}
+          detail={`${fmt(data.collectedThisMonth)} collected − ${fmt(data.expensesThisMonth)} expenses`}
+          tone={data.netProfit >= 0 ? "up" : "down"}
+          href="/admin/reports"
+        />
+        <Stat
           label="Revenue Trend"
           value={data.revenueDelta == null ? "No baseline" : `${data.revenueDelta >= 0 ? "+" : ""}${data.revenueDelta}%`}
           detail={`${fmt(data.thisMonthRevenue)} vs ${fmt(data.lastMonthRevenue)} last month`}
@@ -207,6 +227,9 @@ export default function InsightsPage() {
           href="/admin/invoices"
         />
       </section>
+
+      {/* Revenue chart (moved here from the dashboard) */}
+      <YearlyChart />
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         {/* Profit margin ranking */}
