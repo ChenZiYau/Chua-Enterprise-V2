@@ -283,8 +283,12 @@ export function Header() {
 
   return (
     <header
-      className="flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 py-4 sm:py-5"
-      style={{ background: "transparent" }}
+      className="sticky top-0 z-30 flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 py-4 sm:py-5"
+      style={{
+        background: "var(--background)",
+        borderBottom: "1px solid var(--border-soft)",
+        boxShadow: "var(--shadow-xs)",
+      }}
     >
       <button
         type="button"
