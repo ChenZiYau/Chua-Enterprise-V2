@@ -35,6 +35,27 @@ export type LeaseAlert = {
   daysLeft: number;
 };
 
+/** One past/current rent row for a tenant/unit, used in detail history. */
+export type PaymentHistoryItem = {
+  id: string;
+  period: string; // e.g. "May 2026"
+  amount: number;
+  status: "paid" | "partial" | "pending" | "overdue";
+  paymentDate: string;
+  method: string;
+  // sort keys (not displayed)
+  year: number;
+  month: number;
+};
+
+/** A still-open maintenance issue tied to a unit/tenant. */
+export type UnitIssue = {
+  id: string;
+  issue: string;
+  priority: string;
+  status: string;
+};
+
 export type UnitDetail = {
   id: string;
   property: string;
@@ -43,6 +64,17 @@ export type UnitDetail = {
   isRented: boolean;
   tenant: string; // tenant name, "" when vacant/unknown
   rentalRate: number;
+  // tenant contact + lease (read-only context for the detail view)
+  phone: string;
+  email: string;
+  leaseStart: string;
+  leaseEnd: string;
+  // this-month rent at a glance
+  currentStatus: "paid" | "partial" | "pending" | "overdue" | "none";
+  currentAmount: number;
+  currentPeriod: string;
+  // count of open maintenance issues for this unit
+  openIssues: number;
 };
 
 export type RentEntry = {
@@ -57,7 +89,22 @@ export type RentEntry = {
   // tenant contact (for the dashboard detail view)
   phone: string;
   email: string;
+  leaseStart: string;
   leaseEnd: string;
+  // charge breakdown for the current entry
+  rentalAmount: number;
+  electricityUnits: number;
+  electricityAmount: number;
+  otherCharges: number;
+  // payment metadata
+  paymentMethod: string;
+  paymentDate: string;
+  notes: string;
+  invoiceNumber: string;
+  invoiceSent: boolean;
+  // richer context
+  history: PaymentHistoryItem[]; // past rows for this tenant/unit (excludes this one)
+  openIssues: UnitIssue[]; // still-open maintenance for this unit
 };
 
 export type MaintItem = {
@@ -177,6 +224,19 @@ function lc(s: string) {
   return (s ?? "").trim().toLowerCase();
 }
 
+function periodLabel(year: number, month: number): string {
+  return year ? `${MONTHS_SHORT[(month || 1) - 1]} ${year}` : "";
+}
+
+/** Normalize a raw payment status to one of the four canonical values. */
+function fullStatus(s: string): "paid" | "partial" | "pending" | "overdue" {
+  const v = lc(s);
+  if (v === "paid") return "paid";
+  if (v === "partial") return "partial";
+  if (v === "overdue") return "overdue";
+  return "pending";
+}
+
 /** Billing period (year, month) for a revenue row, with paymentDate fallback. */
 function revPeriod(r: RevenueRow): { year: number; month: number } {
   if (r.year && r.month) return { year: r.year, month: r.month };
@@ -256,6 +316,51 @@ export function buildDashboard(input: {
     tenantDetailByUnit.get(`${property}|${unit}`);
   const unitLabel = (property: string, unit: string) =>
     unit ? `${property} - ${unit}` : property || "-";
+
+  // ---- tenant lookup by name (fallback when unit keys don't line up) ----
+  const tenantByName = new Map<string, TenantRow>();
+  for (const t of tenants) {
+    if (t.name) tenantByName.set(lc(t.name), t);
+  }
+
+  // ---- full payment history per property|unit (most recent first) ----
+  const historyByUnit = new Map<string, PaymentHistoryItem[]>();
+  for (const r of revenue) {
+    if (r.totalAmount <= 0 && !r.paymentDate) continue;
+    const key = `${r.property}|${r.unit}`;
+    const p = revPeriod(r);
+    const item: PaymentHistoryItem = {
+      id: r.id,
+      period: periodLabel(p.year, p.month),
+      amount: r.totalAmount,
+      status: fullStatus(r.paymentStatus),
+      paymentDate: r.paymentDate || "",
+      method: r.paymentMethod || "",
+      year: p.year,
+      month: p.month,
+    };
+    const arr = historyByUnit.get(key) ?? [];
+    arr.push(item);
+    historyByUnit.set(key, arr);
+  }
+  for (const arr of historyByUnit.values()) {
+    arr.sort((a, b) => b.year - a.year || b.month - a.month);
+  }
+
+  // ---- open maintenance issues per property|unit ----
+  const issuesByUnit = new Map<string, UnitIssue[]>();
+  for (const m of maintenance) {
+    if (lc(m.status) === "completed") continue;
+    const key = `${m.property}|${m.unit}`;
+    const arr = issuesByUnit.get(key) ?? [];
+    arr.push({
+      id: m.id,
+      issue: m.name || m.category || "Maintenance issue",
+      priority: m.priority || "",
+      status: m.status || "",
+    });
+    issuesByUnit.set(key, arr);
+  }
 
   // ---- occupancy ----
   let totalUnits = units.length;
@@ -394,17 +499,35 @@ export function buildDashboard(input: {
     }));
   const expired = leaseRanked.filter((x) => x.daysLeft < 0).length;
 
+  // ---- this-month revenue per property|unit (for occupancy detail) ----
+  const curRevByUnit = new Map<string, RevenueRow>();
+  for (const r of monthRows) curRevByUnit.set(`${r.property}|${r.unit}`, r);
+
   // ---- unit-level occupancy detail ----
   const unitDetails: UnitDetail[] = units
-    .map((u) => ({
-      id: u.id,
-      property: u.property,
-      unit: u.name,
-      label: u.label || u.name,
-      isRented: u.isRented,
-      tenant: u.tenantName || "",
-      rentalRate: u.rentalRate,
-    }))
+    .map((u) => {
+      const td =
+        (u.tenantName && tenantByName.get(lc(u.tenantName))) ||
+        tenantDetailFor(u.property, u.name);
+      const cur = curRevByUnit.get(`${u.property}|${u.name}`);
+      return {
+        id: u.id,
+        property: u.property,
+        unit: u.name,
+        label: u.label || u.name,
+        isRented: u.isRented,
+        tenant: u.tenantName || "",
+        rentalRate: u.rentalRate,
+        phone: td?.phone ?? "",
+        email: td?.email ?? "",
+        leaseStart: td?.leaseStart ?? "",
+        leaseEnd: td?.leaseEnd ?? "",
+        currentStatus: cur ? fullStatus(cur.paymentStatus) : ("none" as const),
+        currentAmount: cur?.totalAmount ?? 0,
+        currentPeriod: periodLabel(curYear, curMonth),
+        openIssues: (issuesByUnit.get(`${u.property}|${u.name}`) ?? []).length,
+      };
+    })
     .sort(
       (a, b) =>
         Number(a.isRented) - Number(b.isRented) ||
@@ -429,19 +552,38 @@ export function buildDashboard(input: {
         s === "paid" ? "paid" : s === "overdue" ? "overdue" : "pending";
       const p = revPeriod(r);
       const ref = r.paymentDate || (p.year ? `${p.year}-${String(p.month).padStart(2, "0")}-28` : "");
-      const td = tenantDetailFor(r.property, r.unit);
+      const tName = nameFor(r.property, r.unit);
+      const td =
+        tenantDetailFor(r.property, r.unit) || tenantByName.get(lc(tName));
+      const key = `${r.property}|${r.unit}`;
+      const history = (historyByUnit.get(key) ?? [])
+        .filter((h) => h.id !== r.id)
+        .slice(0, 6);
+      const openIssues = issuesByUnit.get(key) ?? [];
       return {
         id: r.id,
-        tenant: nameFor(r.property, r.unit),
+        tenant: tName,
         property: r.property,
         unit: unitLabel(r.property, r.unit),
         amount: r.totalAmount,
         status,
-        period: p.year ? `${MONTHS_SHORT[(p.month || 1) - 1]} ${p.year}` : "",
+        period: periodLabel(p.year, p.month),
         daysOverdue: status === "overdue" ? daysSince(ref, today) : 0,
         phone: td?.phone ?? "",
         email: td?.email ?? "",
+        leaseStart: td?.leaseStart ?? "",
         leaseEnd: td?.leaseEnd ?? "",
+        rentalAmount: r.rentalAmount,
+        electricityUnits: r.electricityUnits,
+        electricityAmount: r.electricityAmount,
+        otherCharges: r.otherCharges,
+        paymentMethod: r.paymentMethod || "",
+        paymentDate: r.paymentDate || "",
+        notes: r.notes || "",
+        invoiceNumber: r.invoiceNumber || "",
+        invoiceSent: !!r.invoiceSent,
+        history,
+        openIssues,
       };
     })
     .sort(

@@ -12,6 +12,7 @@ import {
   type PaymentStatus,
 } from "@/types/rental";
 import { calculateElectricityCharge } from "@/lib/electricity";
+import { computeProration, prorationNote, composeProratedNotes, daysInMonth, parseProrationNote, stripProrationNote } from "@/lib/proration";
 import { Select } from "@/components/ui/Select";
 
 type View = "normal" | "expanded" | "minimized";
@@ -71,6 +72,8 @@ export function RevenueEntryDrawer({
   const [customPayMethod, setCustomPayMethod] = useState("");
   const [payStatus, setPayStatus] = useState<PaymentStatus>("paid");
   const [notes, setNotes] = useState("");
+  const [prorate, setProrate] = useState(false);
+  const [startDate, setStartDate] = useState("");
 
   const units = getUnitsForProperty(selectedProperty);
   const unit = getUnit(unitId);
@@ -112,6 +115,8 @@ export function RevenueEntryDrawer({
     setDirty(false);
     const u = getUnit(unitId);
     const ex = unitId ? getRevenueEntry(unitId, year, month) : undefined;
+    // Whether we restored a prorated entry (skips the trailing reset below).
+    let restored = false;
     if (ex) {
       setRental(String(ex.rental_amount));
       setElecUnits(ex.electricity_units != null ? String(ex.electricity_units) : "");
@@ -121,6 +126,20 @@ export function RevenueEntryDrawer({
       setCustomPayMethod(ex.custom_payment_method ?? "");
       setPayStatus(ex.payment_status ?? "paid");
       setNotes(ex.notes ?? "");
+
+      // If this entry was saved prorated, restore the editable full rent from
+      // the note's ratio (approximate — prior rounding may drift by a cent).
+      const parsed = ex.notes ? parseProrationNote(ex.notes) : null;
+      if (parsed) {
+        const fullRent = Math.round((ex.rental_amount * parsed.daysInMonth / parsed.chargeableDays) * 100) / 100;
+        if (Number.isFinite(fullRent) && fullRent > 0) {
+          setRental(String(fullRent));
+          setNotes(stripProrationNote(ex.notes ?? ""));
+          setProrate(true);
+          setStartDate(parsed.startISO);
+          restored = true;
+        }
+      }
     } else {
       setRental(u?.rental_rate ? String(u.rental_rate) : "");
       setElecUnits("");
@@ -130,6 +149,11 @@ export function RevenueEntryDrawer({
       setCustomPayMethod("");
       setPayStatus("paid");
       setNotes("");
+    }
+    // Default proration off (first of the billing month) unless we restored it.
+    if (!restored) {
+      setProrate(false);
+      setStartDate(`${year}-${String(month).padStart(2, "0")}-01`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unitId, year, monthIdx, open]);
@@ -148,7 +172,15 @@ export function RevenueEntryDrawer({
   const elecAmount = elecBill?.chargeAmount ?? 0;
   const rentalNum = parseFloat(rental) || 0;
   const otherNum = parseFloat(otherCharges) || 0;
-  const totalAmount = rentalNum + elecAmount + otherNum;
+
+  // -- Proration --
+  const monthStr = String(month).padStart(2, "0");
+  const dim = daysInMonth(year, month);
+  const startInMonth = startDate.startsWith(`${year}-${monthStr}-`);
+  const startDay = startInMonth ? Number(startDate.slice(8, 10)) : 0;
+  const proration = prorate && startInMonth ? computeProration(rentalNum, year, month, startDay) : null;
+  const effectiveRental = proration ? proration.proratedAmount : rentalNum;
+  const totalAmount = effectiveRental + elecAmount + otherNum;
 
   const attemptClose = useCallback(() => {
     if (dirty && !saved) setConfirmOpen(true);
@@ -185,6 +217,7 @@ export function RevenueEntryDrawer({
     if (!rental || rentalNum <= 0) e.rental = "Enter a rental amount greater than 0.";
     if (!payDate) e.payDate = "Enter a payment date.";
     if (payMethod === "other" && !customPayMethod.trim()) e.customPayMethod = "Describe the payment method.";
+    if (prorate && !startInMonth) e.startDate = `Start date must be within ${MONTHS_FULL[monthIdx]} ${year}.`;
     return e;
   }
 
@@ -195,7 +228,7 @@ export function RevenueEntryDrawer({
     setSaveError(null);
     const input = {
       property_id: selectedProperty, unit_id: unitId, year, month,
-      rental_amount: rentalNum,
+      rental_amount: effectiveRental,
       electricity_units: elecUnitsNum || null,
       electricity_amount: elecAmount || null,
       other_charges_amount: otherNum || null,
@@ -204,7 +237,11 @@ export function RevenueEntryDrawer({
       payment_method: payMethod,
       custom_payment_method: payMethod === "other" ? customPayMethod : null,
       payment_status: payStatus,
-      notes: notes.trim() || null,
+      notes: composeProratedNotes(
+        notes,
+        !!proration,
+        proration ? prorationNote(startDate, proration.chargeableDays, proration.daysInMonth) : null
+      ),
       invoice_generated: generateInvoice,
     };
     try {
@@ -352,7 +389,17 @@ export function RevenueEntryDrawer({
             <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>Charges</p>
             <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
               <div>
-                <label className={labelCls} style={labelStyle}>Rental (RM)</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-semibold uppercase tracking-[0.14em]" style={labelStyle}>
+                    {prorate ? "Full monthly rent (RM)" : "Rental (RM)"}
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Prorate for a mid-month move-in">
+                    <input type="checkbox" checked={prorate}
+                      onChange={(e) => { setProrate(e.target.checked); setDirty(true); }}
+                      style={{ accentColor: "var(--accent)", width: 13, height: 13 }} />
+                    <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>Prorate (mid-month start)</span>
+                  </label>
+                </div>
                 <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls}
                   style={errors.rental ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
                   value={rental} onChange={onText(setRental)} />
@@ -364,6 +411,28 @@ export function RevenueEntryDrawer({
                   value={otherCharges} onChange={onText(setOtherCharges)} />
               </div>
             </div>
+
+            {prorate && (
+              <div className="rounded-lg px-3 py-3 flex flex-col gap-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
+                <div>
+                  <label className={labelCls} style={labelStyle}>Tenant start date</label>
+                  <input type="date" className={inputCls}
+                    style={errors.startDate ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
+                    min={`${year}-${monthStr}-01`} max={`${year}-${monthStr}-${String(dim).padStart(2, "0")}`}
+                    value={startDate} onChange={onText(setStartDate)} />
+                  {errors.startDate && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.startDate}</p>}
+                </div>
+                {proration && (
+                  <div className="text-xs flex flex-col gap-0.5" style={{ color: "var(--text-muted)" }}>
+                    <div className="flex justify-between"><span>Full rent</span><span className="tabular-nums">{fmt(proration.fullRent)}</span></div>
+                    <div className="flex justify-between"><span>Days used</span><span className="tabular-nums">{proration.chargeableDays} / {proration.daysInMonth} days</span></div>
+                    <div className="flex justify-between font-semibold" style={{ color: "var(--text-primary)" }}>
+                      <span>Prorated rent</span><span className="tabular-nums">{fmt(proration.proratedAmount)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label className={labelCls} style={labelStyle}>Electricity usage (kWh)</label>
               <input type="number" inputMode="decimal" min={0} step="1" placeholder="e.g. 120" className={inputCls} style={inputStyle}

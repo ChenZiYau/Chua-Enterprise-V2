@@ -6,13 +6,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { Select } from "@/components/ui/Select";
 import { notionUpdate, isNotionId } from "@/lib/notionClient";
-import { PAYMENT_STATUS_LABEL, type PaymentStatus, type RevenueEntry } from "@/types/rental";
+import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, type PaymentMethod, type PaymentStatus, type RevenueEntry } from "@/types/rental";
 import type {
   DashboardData,
   PropertyHealth,
   RentEntry,
   UnitDetail,
   MaintItem,
+  PaymentHistoryItem,
+  UnitIssue,
 } from "@/lib/dashboard";
 
 /* ------------------------------ formatting -------------------------------- */
@@ -46,8 +48,27 @@ const STATUS_META: Record<
 function statusDot(s: PropertyHealth["status"]) {
   return s === "Good" ? "var(--success)" : s === "Attention" ? "var(--warning)" : "var(--danger)";
 }
-function statusChip(s: PropertyHealth["status"]) {
-  return s === "Good" ? "ui-chip-success" : s === "Attention" ? "ui-chip-warning" : "ui-chip-danger";
+const STATUS_GLOW: Record<PropertyHealth["status"], string> = {
+  Good: "ui-status-good",
+  Attention: "ui-status-attention",
+  Critical: "ui-status-critical",
+};
+
+/* A quiet dot + label — replaces the loud status pills for a premium look. */
+function StatusIndicator({ status }: { status: PropertyHealth["status"] }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 shrink-0">
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusDot(status) }} />
+      <span className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>{status}</span>
+    </span>
+  );
+}
+
+/* Colour the collection bar by how much rent has come in. */
+function rateColor(pct: number) {
+  if (pct >= 85) return "var(--success)";
+  if (pct >= 50) return "var(--warning)";
+  return "var(--danger)";
 }
 function prioColor(priority: string, reason: "urgent" | "overdue") {
   const p = priority.toLowerCase();
@@ -91,6 +112,79 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
     <div className="flex items-baseline justify-between gap-3 py-1.5 border-b" style={{ borderColor: "var(--border-soft)" }}>
       <span className="text-xs shrink-0" style={{ color: "var(--text-faint)" }}>{label}</span>
       <span className={"text-sm text-right truncate " + (mono ? "font-mono" : "")} style={{ color: "var(--text-primary)" }}>{value || "—"}</span>
+    </div>
+  );
+}
+
+/* ----------------------- full payment status meta ----------------------- */
+
+type FullStatus = "paid" | "partial" | "pending" | "overdue" | "none";
+const FULL_STATUS_META: Record<FullStatus, { label: string; chip: string; color: string }> = {
+  paid: { label: "Paid", chip: "ui-chip-success", color: "var(--success)" },
+  partial: { label: "Partial", chip: "ui-chip-warning", color: "var(--warning)" },
+  pending: { label: "Pending", chip: "ui-chip-warning", color: "var(--warning)" },
+  overdue: { label: "Overdue", chip: "ui-chip-danger", color: "var(--danger)" },
+  none: { label: "Not billed", chip: "", color: "var(--text-faint)" },
+};
+
+function fmtDate(iso: string) {
+  if (!iso) return "";
+  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function methodLabel(m: string) {
+  if (!m) return "";
+  return PAYMENT_METHOD_LABEL[m as PaymentMethod] ?? m;
+}
+
+/** A small block heading used to group read-only context inside drawers. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] mb-2" style={{ color: "var(--text-faint)" }}>
+      {children}
+    </p>
+  );
+}
+
+/** One row in the payment-history list (read-only). */
+function HistoryRow({ h }: { h: PaymentHistoryItem }) {
+  const m = FULL_STATUS_META[h.status];
+  return (
+    <div
+      className="flex items-center gap-3 rounded-lg px-3 py-2"
+      style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)", borderLeft: `3px solid ${m.color}` }}
+    >
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{h.period || "—"}</p>
+        <p className="text-[11px] truncate" style={{ color: "var(--text-faint)" }}>
+          {h.paymentDate ? fmtDate(h.paymentDate) : "No payment date"}
+          {h.method ? ` · ${methodLabel(h.method)}` : ""}
+        </p>
+      </div>
+      <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: "var(--text-primary)" }}>{fmtMYR(h.amount)}</span>
+      <span className={"ui-chip shrink-0 " + m.chip}>{m.label}</span>
+    </div>
+  );
+}
+
+/** One row in the open-issues list (read-only). */
+function IssueRow({ i }: { i: UnitIssue }) {
+  const p = i.priority.toLowerCase();
+  const color = p === "urgent" || p === "high" ? "var(--danger)" : p === "medium" ? "var(--warning)" : "var(--accent)";
+  return (
+    <div
+      className="flex items-center gap-3 rounded-lg px-3 py-2"
+      style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)", borderLeft: `3px solid ${color}` }}
+    >
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{i.issue}</p>
+        {i.status ? <p className="text-[11px] truncate" style={{ color: "var(--text-faint)" }}>{i.status}</p> : null}
+      </div>
+      {i.priority ? (
+        <span className="ui-chip shrink-0" style={{ background: `color-mix(in srgb, ${color} 16%, transparent)`, color }}>{i.priority}</span>
+      ) : null}
     </div>
   );
 }
@@ -230,13 +324,24 @@ function RentSummaryButton({ data, onOpen }: { data: DashboardData; onOpen: () =
         <span className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
           Rent · This Month
         </span>
-        <span className="ui-chip">{c.ratePct}% collected</span>
       </div>
       <div className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
         {fmtMYR(c.collected)}
         <span className="text-sm font-medium" style={{ color: "var(--text-faint)" }}>
           {" "}/ {fmtMYR(c.billed)}
         </span>
+      </div>
+      {/* Collection rate — bar carries the status, no badge needed */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>Collection Rate</span>
+          <span className="text-sm font-semibold tabular-nums" style={{ color: rateColor(c.ratePct) }}>
+            {c.ratePct}%
+          </span>
+        </div>
+        <div className="flex h-2 w-full rounded-full overflow-hidden" style={{ background: "var(--surface-muted)" }}>
+          <div style={{ width: `${c.ratePct}%`, background: rateColor(c.ratePct), transition: "width 300ms ease" }} />
+        </div>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {stats.map((s) => (
@@ -270,16 +375,21 @@ function OccupancyButton({ data, onOpen }: { data: DashboardData; onOpen: () => 
         <span className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
           Occupancy
         </span>
-        <span className={"ui-chip " + (k.vacantUnits > 0 ? "ui-chip-warning" : "ui-chip-success")}>
-          {k.vacantUnits > 0 ? `${k.vacantUnits} vacant` : "Full"}
-        </span>
       </div>
       <div className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
         {k.occupancyPct}%
       </div>
-      {/* occupancy bar */}
-      <div className="flex h-2.5 w-full rounded-full overflow-hidden" style={{ background: "var(--surface-muted)" }}>
-        <div style={{ width: `${k.occupancyPct}%`, background: "var(--success)" }} />
+      {/* Occupancy rate — the bar communicates how full the portfolio is */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>Occupancy Rate</span>
+          <span className="text-sm font-semibold tabular-nums" style={{ color: rateColor(k.occupancyPct) }}>
+            {k.occupancyPct}%
+          </span>
+        </div>
+        <div className="flex h-2 w-full rounded-full overflow-hidden" style={{ background: "var(--surface-muted)" }}>
+          <div style={{ width: `${k.occupancyPct}%`, background: rateColor(k.occupancyPct), transition: "width 300ms ease" }} />
+        </div>
       </div>
       <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
         {k.rentedUnits} of {k.totalUnits} units rented · {k.vacantUnits} vacant
@@ -612,6 +722,9 @@ function RentItemDrawer({
     >
       {editing ? (
         <div className="flex flex-col gap-4">
+          <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+            Only the payment can be updated here. Tenant name, contact and lease are managed on the Tenants page.
+          </p>
           <EditField label="Payment status">
             <Select
               value={status}
@@ -629,21 +742,96 @@ function RentItemDrawer({
           {error ? <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p> : null}
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between">
             <span className={"ui-chip " + m.chip}>{m.label}</span>
-            <span className="text-2xl font-bold tabular-nums" style={{ color: m.color }}>{fmtMYR(entry.amount)}</span>
+            <div className="text-right">
+              <span className="text-2xl font-bold tabular-nums block" style={{ color: m.color }}>{fmtMYR(entry.amount)}</span>
+              <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+                {entry.period}
+                {entry.status === "overdue" && entry.daysOverdue > 0 ? ` · ${entry.daysOverdue} days overdue` : ""}
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <DetailRow label="Unit" value={entry.unit} />
-            <DetailRow label="Period" value={entry.period} />
-            <DetailRow label="Phone" value={entry.phone} />
-            <DetailRow label="Email" value={entry.email} />
-            <DetailRow label="Lease ends" value={entry.leaseEnd} />
-            {entry.status === "overdue" && entry.daysOverdue > 0 ? (
-              <DetailRow label="Overdue" value={`${entry.daysOverdue} days`} />
+
+          {/* Charge breakdown — explains how the total is made up */}
+          <section>
+            <SectionLabel>This payment</SectionLabel>
+            <div className="flex flex-col">
+              <DetailRow label="Rent" value={entry.rentalAmount ? fmtMYR(entry.rentalAmount) : "—"} />
+              <DetailRow
+                label="Electricity"
+                value={
+                  entry.electricityAmount
+                    ? `${fmtMYR(entry.electricityAmount)}${entry.electricityUnits ? ` · ${entry.electricityUnits} units` : ""}`
+                    : "—"
+                }
+              />
+              <DetailRow label="Other charges" value={entry.otherCharges ? fmtMYR(entry.otherCharges) : "—"} />
+              <DetailRow label="Total" value={fmtMYR(entry.amount)} />
+              <DetailRow label="Payment method" value={methodLabel(entry.paymentMethod)} />
+              <DetailRow label="Paid on" value={fmtDate(entry.paymentDate)} />
+              <DetailRow label="Invoice" value={entry.invoiceNumber ? `${entry.invoiceNumber}${entry.invoiceSent ? " · sent" : ""}` : entry.invoiceSent ? "Sent" : "—"} />
+            </div>
+            {entry.notes ? (
+              <p className="text-sm mt-3 leading-6" style={{ color: "var(--text-secondary)" }}>
+                <span className="text-[11px] uppercase tracking-wider mr-2" style={{ color: "var(--text-faint)" }}>Note</span>
+                {entry.notes}
+              </p>
             ) : null}
-          </div>
+          </section>
+
+          {/* Tenant — read-only contact pulled from the Tenants directory */}
+          <section>
+            <SectionLabel>Tenant &amp; lease</SectionLabel>
+            <div className="flex flex-col">
+              <DetailRow label="Name" value={entry.tenant} />
+              <DetailRow label="Unit" value={entry.unit} />
+              <DetailRow label="Phone" value={entry.phone} />
+              <DetailRow label="Email" value={entry.email} />
+              <DetailRow label="Lease start" value={fmtDate(entry.leaseStart)} />
+              <DetailRow label="Lease ends" value={fmtDate(entry.leaseEnd)} />
+            </div>
+            <p className="text-[11px] mt-2" style={{ color: "var(--text-faint)" }}>
+              Name and contact details are read-only here. Change them on the{" "}
+              <Link href="/admin/tenants" className="font-medium" style={{ color: "var(--accent)" }}>Tenants</Link> page.
+            </p>
+          </section>
+
+          {/* Latest pending / overdue across all periods */}
+          {(() => {
+            const outstanding = entry.history.filter((h) => h.status === "pending" || h.status === "overdue" || h.status === "partial");
+            return outstanding.length ? (
+              <section>
+                <SectionLabel>Other outstanding payments ({outstanding.length})</SectionLabel>
+                <div className="flex flex-col gap-2">
+                  {outstanding.slice(0, 4).map((h) => <HistoryRow key={h.id} h={h} />)}
+                </div>
+              </section>
+            ) : null;
+          })()}
+
+          {/* Past payment history */}
+          <section>
+            <SectionLabel>Payment history</SectionLabel>
+            {entry.history.length === 0 ? (
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>No earlier records for this tenant.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {entry.history.map((h) => <HistoryRow key={h.id} h={h} />)}
+              </div>
+            )}
+          </section>
+
+          {/* Open maintenance / issues the tenant is dealing with */}
+          {entry.openIssues.length > 0 ? (
+            <section>
+              <SectionLabel>Open issues ({entry.openIssues.length})</SectionLabel>
+              <div className="flex flex-col gap-2">
+                {entry.openIssues.map((i) => <IssueRow key={i.id} i={i} />)}
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
     </Drawer>
@@ -755,16 +943,85 @@ function UnitItemDrawer({
           {error ? <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p> : null}
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
-          <span className={"ui-chip w-fit " + (unit.isRented ? "ui-chip-success" : "ui-chip-warning")}>
-            {unit.isRented ? "Occupied" : "Vacant"}
-          </span>
-          <div className="flex flex-col">
-            <DetailRow label="Property" value={unit.property} />
-            <DetailRow label="Unit" value={unit.unit} />
-            <DetailRow label="Tenant" value={unit.isRented ? unit.tenant || "—" : "Vacant"} />
-            <DetailRow label="Rental rate" value={unit.rentalRate ? `RM ${unit.rentalRate}/mo` : "—"} />
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center justify-between gap-3">
+            <span className={"ui-chip w-fit " + (unit.isRented ? "ui-chip-success" : "ui-chip-warning")}>
+              {unit.isRented ? "Occupied" : "Vacant"}
+            </span>
+            {unit.rentalRate ? (
+              <span className="text-xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                RM {unit.rentalRate}
+                <span className="text-xs font-medium" style={{ color: "var(--text-faint)" }}> /mo</span>
+              </span>
+            ) : null}
           </div>
+
+          {/* Unit + tenant overview */}
+          <section>
+            <SectionLabel>Unit</SectionLabel>
+            <div className="flex flex-col">
+              <DetailRow label="Property" value={unit.property} />
+              <DetailRow label="Unit" value={unit.unit} />
+              <DetailRow label="Rental rate" value={unit.rentalRate ? `RM ${unit.rentalRate}/mo` : "—"} />
+              <DetailRow label="Open issues" value={unit.openIssues > 0 ? String(unit.openIssues) : "None"} />
+            </div>
+          </section>
+
+          {unit.isRented ? (
+            <>
+              {/* Who lives here — read-only, sourced from Tenants */}
+              <section>
+                <SectionLabel>Tenant</SectionLabel>
+                <div className="flex flex-col">
+                  <DetailRow label="Name" value={unit.tenant || "—"} />
+                  <DetailRow label="Phone" value={unit.phone} />
+                  <DetailRow label="Email" value={unit.email} />
+                  <DetailRow label="Lease start" value={fmtDate(unit.leaseStart)} />
+                  <DetailRow label="Lease ends" value={fmtDate(unit.leaseEnd)} />
+                </div>
+                <p className="text-[11px] mt-2" style={{ color: "var(--text-faint)" }}>
+                  Tenant name and contact are read-only here. Edit them on the{" "}
+                  <Link href="/admin/tenants" className="font-medium" style={{ color: "var(--accent)" }}>Tenants</Link> page.
+                </p>
+              </section>
+
+              {/* Have they paid this month? */}
+              <section>
+                <SectionLabel>This month&apos;s rent</SectionLabel>
+                {unit.currentStatus === "none" ? (
+                  <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                    No rent entry recorded for {unit.currentPeriod} yet.
+                  </p>
+                ) : (
+                  <div
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5"
+                    style={{
+                      background: "var(--surface-muted)",
+                      border: "1px solid var(--border-soft)",
+                      borderLeft: `3px solid ${FULL_STATUS_META[unit.currentStatus].color}`,
+                    }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{unit.currentPeriod}</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>Current billing period</p>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>{fmtMYR(unit.currentAmount)}</span>
+                    <span className={"ui-chip " + FULL_STATUS_META[unit.currentStatus].chip}>
+                      {FULL_STATUS_META[unit.currentStatus].label}
+                    </span>
+                  </div>
+                )}
+                <p className="text-[11px] mt-2" style={{ color: "var(--text-faint)" }}>
+                  Update payment status from the{" "}
+                  <Link href="/admin/tenants" className="font-medium" style={{ color: "var(--accent)" }}>Tenant payment status</Link> view.
+                </p>
+              </section>
+            </>
+          ) : (
+            <p className="text-sm py-2" style={{ color: "var(--text-muted)" }}>
+              This unit is vacant. Set it to occupied and assign a tenant using Edit.
+            </p>
+          )}
         </div>
       )}
     </Drawer>
@@ -962,7 +1219,7 @@ function PropertyDrawer({
             { value: "condition", label: "Condition" },
           ]}
         />
-        <span className={"ui-chip " + statusChip(p.status)}>{p.status}</span>
+        <StatusIndicator status={p.status} />
       </div>
 
       {view === "property" ? (
@@ -1117,7 +1374,7 @@ function PropertySection({
               key={p.id || p.name}
               type="button"
               onClick={() => onOpen(p, view)}
-              className="text-left rounded-xl p-4 flex flex-col gap-3 transition hover:shadow-md hover:border-[var(--accent)] cursor-pointer"
+              className={"text-left rounded-xl p-4 flex flex-col gap-3 transition cursor-pointer " + STATUS_GLOW[p.status]}
               style={{
                 background: "var(--surface-muted)",
                 border: "1px solid var(--border-soft)",
@@ -1137,7 +1394,7 @@ function PropertySection({
                         : `${p.modelLabel} · ${p.rentedUnits}/${p.totalUnits} ${p.unitWord} rented`}
                   </p>
                 </div>
-                <span className={"ui-chip shrink-0 " + statusChip(p.status)}>{p.status}</span>
+                <StatusIndicator status={p.status} />
               </div>
 
               {view === "property" ? (

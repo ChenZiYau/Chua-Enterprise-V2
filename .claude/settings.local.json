@@ -16,7 +16,10 @@
       "mcp__plugin_Notion_notion__notion-create-pages",
       "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 30)",
       "Bash(python -)",
-      "Bash(grep -ivE \"\\\\.next[\\\\\\\\/]types\")"
+      "Bash(grep -ivE \"\\\\.next[\\\\\\\\/]types\")",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npm run *)",
+      "Bash(node *)"
     ]
   },
   "enabledMcpjsonServers": [

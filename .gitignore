@@ -7,3 +7,12 @@ node_modules
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts.bak
+
+# Excel / spreadsheet files
+*.xlsx
+*.xls
+*.xlsm
+
+# Dashboard documentation builder
+build_dashboard_doc.py
+tools/build-system-flow-xlsx.ps1

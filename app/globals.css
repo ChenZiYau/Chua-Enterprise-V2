@@ -269,6 +269,33 @@ body {
     0 0 18px color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
+/* Soft status glows for cards — premium, low-intensity, never neon. The
+   status is carried mainly by the card's left border; the glow only hints. */
+.ui-status-good {
+  box-shadow: var(--shadow-xs),
+    0 0 24px color-mix(in srgb, var(--success) 8%, transparent);
+}
+.ui-status-attention {
+  box-shadow: var(--shadow-xs),
+    0 0 24px color-mix(in srgb, var(--warning) 9%, transparent);
+}
+.ui-status-critical {
+  box-shadow: var(--shadow-xs),
+    0 0 24px color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.ui-status-good:hover {
+  box-shadow: var(--shadow-sm),
+    0 0 30px color-mix(in srgb, var(--success) 12%, transparent);
+}
+.ui-status-attention:hover {
+  box-shadow: var(--shadow-sm),
+    0 0 30px color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.ui-status-critical:hover {
+  box-shadow: var(--shadow-sm),
+    0 0 30px color-mix(in srgb, var(--danger) 15%, transparent);
+}
+
 @media print {
   body { background: white !important; color: black !important; }
   .no-print, header, aside, nav, button { display: none !important; }

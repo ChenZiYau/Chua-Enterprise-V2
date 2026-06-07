@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { useMobileNav } from "./MobileNavContext";
 import {
+  IconQuickEntry,
   IconDashboard,
   IconProperties,
   IconRevenue,
@@ -25,7 +26,8 @@ type NavItem = {
 };
 
 const items: NavItem[] = [
-  { label: "Dashboard", href: "/admin", icon: IconDashboard },
+  { label: "Quick Entry", href: "/admin/entry", icon: IconQuickEntry },
+  { label: "Dashboard", href: "/admin/dashboard", icon: IconDashboard },
   { label: "Properties", href: "/admin/properties", icon: IconProperties },
   { label: "Revenue", href: "/admin/revenue", icon: IconRevenue },
   { label: "Expenses", href: "/admin/expenses", icon: IconExpenses },
