@@ -56,38 +56,215 @@ function invoiceNumber(e: RevenueEntry) {
   return e.invoice_number || makeInvoiceNumber(e);
 }
 
-function pdfText(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+function esc(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-function downloadPdf(filename: string, lines: string[]) {
-  const content = lines
-    .map((line, index) => `BT /F1 11 Tf 50 ${760 - index * 18} Td (${pdfText(line)}) Tj ET`)
-    .join("\n");
-  const objects = [
-    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
-    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
-    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
-    `5 0 obj << /Length ${content.length} >> stream\n${content}\nendstream endobj`,
-  ];
-  let body = "%PDF-1.4\n";
-  const offsets = [0];
-  for (const object of objects) {
-    offsets.push(body.length);
-    body += `${object}\n`;
-  }
-  const xref = body.length;
-  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets.slice(1)) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  body += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+type InvoiceLine = { label: string; detail?: string; amount: number };
 
-  const url = URL.createObjectURL(new Blob([body], { type: "application/pdf" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+type InvoiceData = {
+  number: string;
+  issueDate: string;
+  period: string;
+  billToName: string;
+  billToUnit: string;
+  propertyName: string;
+  propertyAddress: string;
+  lines: InvoiceLine[];
+  total: number;
+  paymentStatus: string;
+  paymentDate?: string;
+  paymentMethod?: string;
+  notes?: string;
+};
+
+function renderInvoiceHtml(d: InvoiceData) {
+  const currency = (n: number) =>
+    new Intl.NumberFormat("en-MY", {
+      style: "currency",
+      currency: "MYR",
+      minimumFractionDigits: 2,
+    }).format(n);
+
+  const lineRows = d.lines
+    .map(
+      (l) => `
+        <tr>
+          <td>
+            <div class="line-label">${esc(l.label)}</div>
+            ${l.detail ? `<div class="line-detail">${esc(l.detail)}</div>` : ""}
+          </td>
+          <td class="amount">${esc(currency(l.amount))}</td>
+        </tr>`
+    )
+    .join("");
+
+  const meta: Array<[string, string]> = [];
+  if (d.paymentDate) meta.push(["Paid On", d.paymentDate]);
+  if (d.paymentMethod) meta.push(["Method", d.paymentMethod]);
+  const metaHtml = meta.length
+    ? `<div class="meta-grid">${meta
+        .map(
+          ([k, v]) =>
+            `<div><div class="meta-k">${esc(k)}</div><div class="meta-v">${esc(v)}</div></div>`
+        )
+        .join("")}</div>`
+    : "";
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>${esc(d.number)}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #f3f4f6; color: #111827;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px; line-height: 1.5; }
+  .sheet { background: #fff; max-width: 760px; margin: 32px auto; padding: 48px 56px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-radius: 6px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start;
+    padding-bottom: 24px; border-bottom: 2px solid #111827; }
+  .brand h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+  .brand p { margin: 4px 0 0; color: #6b7280; font-size: 12px; }
+  .doc-meta { text-align: right; }
+  .doc-meta .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #6b7280; }
+  .doc-meta .number { font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 16px; font-weight: 600; margin-top: 2px; }
+  .doc-meta .issue { font-size: 12px; color: #6b7280; margin-top: 6px; }
+  .status { display: inline-block; padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 10px; }
+  .status-paid { background: #d1fae5; color: #065f46; }
+  .status-partial { background: #fef3c7; color: #92400e; }
+  .status-pending { background: #e0e7ff; color: #3730a3; }
+  .status-overdue { background: #fee2e2; color: #991b1b; }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin: 32px 0; }
+  .party .heading { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: #6b7280; margin-bottom: 6px; }
+  .party .name { font-weight: 600; font-size: 14px; }
+  .party .sub { color: #6b7280; font-size: 12px; margin-top: 2px; }
+  .period { padding: 12px 16px; background: #f9fafb; border-left: 3px solid #111827;
+    border-radius: 0 4px 4px 0; margin-bottom: 24px; }
+  .period .heading { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #6b7280; }
+  .period .value { font-weight: 600; margin-top: 2px; }
+  table.lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.lines th { text-align: left; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: #6b7280; padding: 10px 12px;
+    border-bottom: 1px solid #e5e7eb; }
+  table.lines th.amount { text-align: right; }
+  table.lines td { padding: 14px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  table.lines td.amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .line-label { font-weight: 500; }
+  .line-detail { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .totals { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .totals-box { min-width: 260px; }
+  .totals-row { display: flex; justify-content: space-between; padding: 8px 12px; font-size: 13px; }
+  .totals-row.grand { border-top: 2px solid #111827; margin-top: 4px; padding-top: 12px;
+    font-size: 16px; font-weight: 700; }
+  .totals-row .amt { font-variant-numeric: tabular-nums; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    padding: 16px; background: #f9fafb; border-radius: 4px; margin-top: 32px; }
+  .meta-k { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #6b7280; }
+  .meta-v { font-weight: 500; margin-top: 2px; }
+  .notes { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .notes .heading { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: #6b7280; margin-bottom: 6px; }
+  .notes p { margin: 0; color: #374151; white-space: pre-wrap; }
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb;
+    text-align: center; font-size: 11px; color: #9ca3af; }
+  .toolbar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; }
+  .toolbar button { padding: 8px 14px; font-size: 12px; font-weight: 500; cursor: pointer;
+    border-radius: 4px; border: 1px solid #d1d5db; background: #fff; }
+  .toolbar button.primary { background: #111827; color: #fff; border-color: #111827; }
+  @media print {
+    body { background: #fff; }
+    .sheet { box-shadow: none; margin: 0; max-width: none; padding: 32px 40px; border-radius: 0; }
+    .toolbar { display: none; }
+    @page { size: A4; margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.close()">Close</button>
+    <button class="primary" onclick="window.print()">Print / Save PDF</button>
+  </div>
+  <div class="sheet">
+    <div class="header">
+      <div class="brand">
+        <h1>INVOICE</h1>
+        <p>Chua Enterprise</p>
+      </div>
+      <div class="doc-meta">
+        <div class="label">Invoice #</div>
+        <div class="number">${esc(d.number)}</div>
+        <div class="issue">Issued ${esc(d.issueDate)}</div>
+        <div class="status status-${esc(d.paymentStatus.toLowerCase())}">${esc(d.paymentStatus)}</div>
+      </div>
+    </div>
+
+    <div class="parties">
+      <div class="party">
+        <div class="heading">Bill To</div>
+        <div class="name">${esc(d.billToName)}</div>
+        <div class="sub">${esc(d.billToUnit)}</div>
+      </div>
+      <div class="party">
+        <div class="heading">Property</div>
+        <div class="name">${esc(d.propertyName)}</div>
+        <div class="sub">${esc(d.propertyAddress)}</div>
+      </div>
+    </div>
+
+    <div class="period">
+      <div class="heading">Billing Period</div>
+      <div class="value">${esc(d.period)}</div>
+    </div>
+
+    <table class="lines">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="amount">Amount</th>
+        </tr>
+      </thead>
+      <tbody>${lineRows}</tbody>
+    </table>
+
+    <div class="totals">
+      <div class="totals-box">
+        <div class="totals-row grand">
+          <span>Total Due</span>
+          <span class="amt">${esc(currency(d.total))}</span>
+        </div>
+      </div>
+    </div>
+
+    ${metaHtml}
+
+    ${d.notes ? `<div class="notes"><div class="heading">Notes</div><p>${esc(d.notes)}</p></div>` : ""}
+
+    <div class="footer">
+      Thank you for your business.
+    </div>
+  </div>
+  <script>
+    window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 200); });
+  </script>
+</body>
+</html>`;
+}
+
+function openInvoiceWindow(data: InvoiceData) {
+  const w = window.open("", "_blank", "width=900,height=1000");
+  if (!w) return;
+  w.document.open();
+  w.document.write(renderInvoiceHtml(data));
+  w.document.close();
 }
 
 export default function InvoicesPage() {
@@ -196,23 +373,39 @@ export default function InvoicesPage() {
       setActionError(err instanceof Error ? err.message : "Could not save invoice number to Notion.");
       return;
     }
-    downloadPdf(`${number}.pdf`, [
-      `Invoice ${number}`,
-      "",
-      `Bill To: ${unit?.tenant_name ?? "-"}`,
-      `Property: ${prop?.name ?? entry.property_id}`,
-      `Address: ${prop?.address ?? "-"}`,
-      `Unit: ${unit?.name ?? entry.unit_id}`,
-      `Billing Period: ${MONTHS_FULL[entry.month - 1]} ${entry.year}`,
-      "",
-      `Rental: ${fmt(entry.rental_amount)}`,
-      `Electricity: ${fmt(entry.electricity_amount ?? 0)}`,
-      `Other Charges: ${fmt(entry.other_charges_amount ?? 0)}`,
-      `Total: ${fmt(entry.total_amount)}`,
-      `Payment Status: ${PAYMENT_STATUS_LABEL[entry.payment_status ?? "pending"]}`,
-      "",
-      entry.notes ? `Notes: ${entry.notes}` : "",
-    ].filter(Boolean));
+    const lines: InvoiceLine[] = [
+      { label: "Monthly Rental", amount: entry.rental_amount },
+    ];
+    if (entry.electricity_amount != null && entry.electricity_amount > 0) {
+      lines.push({
+        label: "Electricity",
+        detail: entry.electricity_units != null ? `${entry.electricity_units} units` : undefined,
+        amount: entry.electricity_amount,
+      });
+    }
+    if (entry.other_charges_amount != null && entry.other_charges_amount > 0) {
+      lines.push({ label: "Other Charges", amount: entry.other_charges_amount });
+    }
+    const status = entry.payment_status ?? "pending";
+    openInvoiceWindow({
+      number,
+      issueDate: todayIso(),
+      period: `${MONTHS_FULL[entry.month - 1]} ${entry.year}`,
+      billToName: unit?.tenant_name ?? "-",
+      billToUnit: unit?.name ?? entry.unit_id,
+      propertyName: prop?.name ?? entry.property_id,
+      propertyAddress: prop?.address ?? "",
+      lines,
+      total: entry.total_amount,
+      paymentStatus: PAYMENT_STATUS_LABEL[status],
+      paymentDate: entry.payment_date || undefined,
+      paymentMethod: entry.payment_method
+        ? entry.payment_method === "other"
+          ? (entry.custom_payment_method ?? "Other")
+          : PAYMENT_METHOD_LABEL[entry.payment_method]
+        : undefined,
+      notes: entry.notes || undefined,
+    });
   }
 
   async function sendInvoice(entry: RevenueEntry) {
