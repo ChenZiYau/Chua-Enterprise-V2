@@ -347,14 +347,57 @@ function pUrl(v: string | null | undefined): PropValue {
   return { url: v || null };
 }
 
+const schemaCache = new Map<string, Promise<Set<string>>>();
+
+async function getDbPropertyNames(databaseId: string): Promise<Set<string>> {
+  let p = schemaCache.get(databaseId);
+  if (!p) {
+    p = (async () => {
+      const r = await fetch(`${NOTION_API}/databases/${databaseId}`, {
+        method: "GET",
+        headers: headers(),
+      });
+      if (!r.ok) throw new Error(`Notion db retrieve failed: ${r.status} ${await r.text()}`);
+      const data = (await r.json()) as { properties: Record<string, unknown> };
+      return new Set(Object.keys(data.properties || {}));
+    })();
+    schemaCache.set(databaseId, p);
+    p.catch(() => schemaCache.delete(databaseId));
+  }
+  return p;
+}
+
+function filterByPageProps(
+  properties: Record<string, PropValue>,
+  existing: Set<string>
+): Record<string, PropValue> {
+  const out: Record<string, PropValue> = {};
+  for (const [k, v] of Object.entries(properties)) {
+    if (existing.has(k)) out[k] = v;
+  }
+  return out;
+}
+
+async function getPageDatabaseId(pageId: string): Promise<string | null> {
+  const r = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: "GET",
+    headers: headers(),
+  });
+  if (!r.ok) return null;
+  const data = (await r.json()) as { parent?: { database_id?: string } };
+  return data.parent?.database_id ?? null;
+}
+
 async function createPage(
   databaseId: string,
   properties: Record<string, PropValue>
 ): Promise<string> {
+  const existing = await getDbPropertyNames(databaseId);
+  const filtered = filterByPageProps(properties, existing);
   const r = await fetch(`${NOTION_API}/pages`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ parent: { database_id: databaseId }, properties }),
+    body: JSON.stringify({ parent: { database_id: databaseId }, properties: filtered }),
   });
   if (!r.ok) throw new Error(`Notion create failed: ${r.status} ${await r.text()}`);
   const data = (await r.json()) as { id: string };
@@ -363,12 +406,17 @@ async function createPage(
 
 async function updatePage(
   pageId: string,
-  properties: Record<string, PropValue>
+  properties: Record<string, PropValue>,
+  databaseId?: string
 ): Promise<void> {
+  const dbId = databaseId ?? (await getPageDatabaseId(pageId));
+  const payload = dbId
+    ? filterByPageProps(properties, await getDbPropertyNames(dbId))
+    : properties;
   const r = await fetch(`${NOTION_API}/pages/${pageId}`, {
     method: "PATCH",
     headers: headers(),
-    body: JSON.stringify({ properties }),
+    body: JSON.stringify({ properties: payload }),
   });
   if (!r.ok) throw new Error(`Notion update failed: ${r.status} ${await r.text()}`);
 }
@@ -518,7 +566,7 @@ export async function createEntity(entity: Entity, fields: AnyFields): Promise<s
 export async function updateEntity(entity: Entity, id: string, fields: AnyFields): Promise<void> {
   const builder = BUILDERS[entity];
   if (!builder) throw new Error(`No write builder for entity "${entity}"`);
-  await updatePage(id, builder(fields));
+  await updatePage(id, builder(fields), DB_IDS[entity]);
 }
 
 export async function deleteEntity(id: string): Promise<void> {
