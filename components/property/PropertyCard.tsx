@@ -8,6 +8,7 @@ import {
   type Property,
 } from "@/types/rental";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
+import { QuickEntryModal } from "@/components/property/QuickEntryModal";
 
 function formatMYR(value: number | undefined) {
   if (value === undefined || value === null) return "-";
@@ -31,6 +32,7 @@ function statusChipClass(status: Property["status"]) {
 
 export function PropertyCard({ property }: { property: Property }) {
   const [imgSrc, setImgSrc] = useState(property.image_url || PROPERTY_FALLBACK_IMAGE);
+  const [quickEntry, setQuickEntry] = useState<null | "revenue" | "expense">(null);
 
   const isInactive = property.status === "inactive";
   const isWhole = property.rental_model === "whole_unit";
@@ -47,15 +49,22 @@ export function PropertyCard({ property }: { property: Property }) {
   const detailHref = `/admin/properties/${property.id}`;
 
   return (
-    <Link
-      href={detailHref}
-      className="ui-card flex flex-col overflow-hidden transition hover:shadow-md focus:outline-none focus-visible:ring-2"
-      style={{
-        opacity: isInactive ? 0.7 : 1,
-        // @ts-expect-error css var
-        "--tw-ring-color": "var(--accent-ring)",
-      }}
+    <div
+      className="ui-card relative flex flex-col overflow-hidden transition hover:shadow-md"
+      style={{ opacity: isInactive ? 0.7 : 1 }}
     >
+      {/* Stretched overlay link: clicking anywhere on the card (except the
+          interactive KPI buttons, which sit above it) opens the detail page. */}
+      <Link
+        href={detailHref}
+        aria-label={`View ${property.name}`}
+        className="absolute inset-0 z-0 focus:outline-none focus-visible:ring-2 rounded-[inherit]"
+        style={{
+          // @ts-expect-error css var
+          "--tw-ring-color": "var(--accent-ring)",
+        }}
+      />
+
       <div className="relative h-36 w-full overflow-hidden" style={{ background: "var(--surface-subtle)" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -122,8 +131,16 @@ export function PropertyCard({ property }: { property: Property }) {
           className="grid grid-cols-3 gap-3 pt-3 mt-auto"
           style={{ borderTop: "1px solid var(--border-soft)" }}
         >
-          <KPI label="Revenue" value={formatMYR(revenue)} />
-          <KPI label="Expenses" value={formatMYR(expenses)} />
+          <KPIButton
+            label="Revenue"
+            value={formatMYR(revenue)}
+            onClick={() => setQuickEntry("revenue")}
+          />
+          <KPIButton
+            label="Expenses"
+            value={formatMYR(expenses)}
+            onClick={() => setQuickEntry("expense")}
+          />
           <KPI
             label="Net"
             value={formatMYR(net)}
@@ -131,7 +148,15 @@ export function PropertyCard({ property }: { property: Property }) {
           />
         </div>
       </div>
-    </Link>
+
+      {/* Quick Entry popup - opened from the Revenue / Expenses KPI buttons */}
+      <QuickEntryModal
+        open={quickEntry !== null}
+        onClose={() => setQuickEntry(null)}
+        propertyId={property.id}
+        initialTab={quickEntry ?? "revenue"}
+      />
+    </div>
   );
 }
 
@@ -148,5 +173,29 @@ function KPI({ label, value, color }: { label: string; value: string; color?: st
         {value}
       </p>
     </div>
+  );
+}
+
+/** A KPI that doubles as a button to open Quick Entry. Sits above the card's
+ *  stretched overlay link (relative + z-10) so its click is not swallowed by
+ *  navigation. */
+function KPIButton({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Add ${label.toLowerCase()}`}
+      aria-label={`Add ${label.toLowerCase()}`}
+      className="relative z-10 text-left px-2.5 py-1.5 rounded-lg border transition hover:bg-[var(--surface-muted)] hover:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}
+    >
+      <p className="text-[10px] uppercase tracking-wider flex items-center gap-1" style={{ color: "var(--text-faint)" }}>
+        {label}
+        <span aria-hidden style={{ color: "var(--text-muted)" }}>+</span>
+      </p>
+      <p className="text-sm font-semibold mt-0.5 tabular-nums" style={{ color: "var(--text-primary)" }}>
+        {value}
+      </p>
+    </button>
   );
 }

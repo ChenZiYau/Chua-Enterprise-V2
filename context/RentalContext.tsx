@@ -202,7 +202,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       invoiceNumber: string; invoiceSent: boolean; invoiceSentAt: string;
     };
     type NPExpense = {
-      id: string; name: string; property: string;
+      id: string; name: string; property: string; unit: string;
       year: number; month: number; expenseDate: string;
       category: string; customCategory: string;
       amount: number; description: string;
@@ -276,6 +276,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
         const unitIdByKey = new Map<string, string>();
         for (const u of uData) {
           unitIdByKey.set(`${u.property}|${u.label}`, u.id);
+          // Also index by unit name so links stored as the unit's name resolve.
+          if (u.name) unitIdByKey.set(`${u.property}|${u.name}`, u.id);
         }
 
         const revs: RevenueEntry[] = rData.map((r) => ({
@@ -304,6 +306,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
         const exps: ExpenseEntry[] = eData.map((e) => ({
           id: e.id,
           property_id: propIdByName.get(e.property) || "",
+          unit_id: unitIdByKey.get(`${e.property}|${e.unit}`) || null,
           year: e.year,
           month: e.month,
           expense_date: e.expenseDate || null,
@@ -536,12 +539,12 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     };
     const realId = await notionCreate(
       "expenses",
-      expenseCreateFields(draft, { property: propNameById(draft.property_id) })
+      expenseCreateFields(draft, { property: propNameById(draft.property_id), unit: unitNameById(draft.unit_id) })
     );
     const entry = { ...draft, id: realId };
     setExpenseEntries((prev) => [entry, ...prev]);
     return entry;
-  }, [propNameById]);
+  }, [propNameById, unitNameById]);
 
   const updateExpenseEntry = useCallback(async (id: string, patch: Partial<ExpenseEntry>) => {
     const current = expenseEntriesRef.current.find((e) => e.id === id);
@@ -551,13 +554,16 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       await notionUpdate(
         "expenses",
         id,
-        expensePatchFields(patch, { property: propNameById(patch.property_id ?? current.property_id) })
+        expensePatchFields(patch, {
+          property: propNameById(patch.property_id ?? current.property_id),
+          unit: unitNameById(patch.unit_id ?? current.unit_id),
+        })
       );
     }
     setExpenseEntries((prev) =>
       prev.map((e) => (e.id === id ? updated : e))
     );
-  }, [propNameById]);
+  }, [propNameById, unitNameById]);
 
   const deleteExpenseEntry = useCallback(async (id: string) => {
     if (isNotionId(id)) {

@@ -14,6 +14,7 @@ import {
 import { calculateElectricityCharge } from "@/lib/electricity";
 import { computeProration, prorationNote, composeProratedNotes, daysInMonth, parseProrationNote, stripProrationNote } from "@/lib/proration";
 import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 
 type View = "normal" | "expanded" | "minimized";
 
@@ -416,10 +417,14 @@ export function RevenueEntryDrawer({
               <div className="rounded-lg px-3 py-3 flex flex-col gap-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
                 <div>
                   <label className={labelCls} style={labelStyle}>Tenant start date</label>
-                  <input type="date" className={inputCls}
-                    style={errors.startDate ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
-                    min={`${year}-${monthStr}-01`} max={`${year}-${monthStr}-${String(dim).padStart(2, "0")}`}
-                    value={startDate} onChange={onText(setStartDate)} />
+                  <DatePickerField
+                    value={startDate}
+                    onChange={(v) => { setStartDate(v); setDirty(true); }}
+                    min={`${year}-${monthStr}-01`}
+                    max={`${year}-${monthStr}-${String(dim).padStart(2, "0")}`}
+                    invalid={!!errors.startDate}
+                    ariaLabel="Tenant start date"
+                  />
                   {errors.startDate && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.startDate}</p>}
                 </div>
                 {proration && (
@@ -453,8 +458,12 @@ export function RevenueEntryDrawer({
             <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls} style={labelStyle}>Payment date</label>
-                <input type="date" className={inputCls} style={errors.payDate ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
-                  value={payDate} onChange={onText(setPayDate)} />
+                <DatePickerField
+                  value={payDate}
+                  onChange={(v) => { setPayDate(v); setDirty(true); }}
+                  invalid={!!errors.payDate}
+                  ariaLabel="Payment date"
+                />
                 {errors.payDate && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.payDate}</p>}
               </div>
               <div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import {
   MONTHS,
@@ -481,20 +482,22 @@ export default function InvoicesPage() {
 
       {/* Filters */}
       <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
-        <input
-          type="month"
-          className="ui-input w-auto"
+        <DatePickerField
+          granularity="month"
+          className="w-[150px]"
           value={fromMonth}
-          onChange={(e) => setFromMonth(e.target.value)}
-          aria-label="From month"
+          onChange={setFromMonth}
+          placeholder="From month"
+          ariaLabel="From month"
         />
         <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
-        <input
-          type="month"
-          className="ui-input w-auto"
+        <DatePickerField
+          granularity="month"
+          className="w-[150px]"
           value={toMonth}
-          onChange={(e) => setToMonth(e.target.value)}
-          aria-label="To month"
+          onChange={setToMonth}
+          placeholder="To month"
+          ariaLabel="To month"
         />
 
         <input

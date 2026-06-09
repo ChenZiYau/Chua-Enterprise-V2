@@ -178,6 +178,7 @@ export type ExpenseRow = {
   id: string;
   name: string;
   property: string;
+  unit: string;
   year: number;
   month: number;
   expenseDate: string;
@@ -275,6 +276,7 @@ export async function getExpenses(): Promise<ExpenseRow[]> {
     id: r.id,
     name: txt(r.properties["Name"]),
     property: txt(r.properties["Property"]),
+    unit: txt(r.properties["Unit"]),
     year: num(r.properties["Year"]),
     month: num(r.properties["Month"]),
     expenseDate: dateStr(r.properties["Expense Date"]),
@@ -514,6 +516,7 @@ function buildExpenseProps(f: AnyFields): Record<string, PropValue> {
   const p: Record<string, PropValue> = {};
   if (has(f, "name")) p["Name"] = pTitle(String(f.name ?? ""));
   if (has(f, "property")) p["Property"] = pText(f.property as string);
+  if (has(f, "unit")) p["Unit"] = pText(f.unit as string);
   if (has(f, "year")) p["Year"] = pNum(f.year as number);
   if (has(f, "month")) p["Month"] = pNum(f.month as number);
   if (has(f, "expenseDate")) p["Expense Date"] = pDate(f.expenseDate as string);

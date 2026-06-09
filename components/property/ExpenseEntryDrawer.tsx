@@ -51,7 +51,7 @@ export function ExpenseEntryDrawer({
   propertyName?: string;
   propertyId?: string;
 }) {
-  const { addExpenseEntry, getPropertyYTD, getExpensesForProperty, visibleProperties } = useRental();
+  const { addExpenseEntry, getPropertyYTD, getExpensesForProperty, visibleProperties, getProperty, getUnitsForProperty } = useRental();
   const now = new Date();
 
   const [view, setView] = useState<View>("normal");
@@ -67,12 +67,26 @@ export function ExpenseEntryDrawer({
   const [year, setYear] = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
   const [items, setItems] = useState<Item[]>([newItem()]);
+  // Empty = whole property / shared cost (optional attribution to one room).
+  const [unitId, setUnitId] = useState("");
 
   const activePropertyId = lockProperty ? propertyId! : selectedProperty;
   const activePropertyName =
     propertyName ??
     visibleProperties.find((p) => p.id === activePropertyId)?.name ??
     "Add expenses";
+
+  const activeUnits = useMemo(
+    () => (activePropertyId ? getUnitsForProperty(activePropertyId) : []),
+    [activePropertyId, getUnitsForProperty]
+  );
+  const showRoomSelector =
+    getProperty(activePropertyId)?.rental_model === "room_rental" && activeUnits.length > 1;
+
+  // Reset the room when the chosen property changes (room list differs).
+  useEffect(() => {
+    setUnitId("");
+  }, [activePropertyId]);
 
   // Reset every time the drawer opens.
   useEffect(() => {
@@ -83,6 +97,7 @@ export function ExpenseEntryDrawer({
       setSaving(false);
       setSaveError(null);
       setSelectedProperty(propertyId ?? "");
+      setUnitId("");
       setYear(now.getFullYear());
       setMonthIdx(now.getMonth());
       setItems([newItem()]);
@@ -148,6 +163,7 @@ export function ExpenseEntryDrawer({
         const desc = it.description.trim() || null;
         await addExpenseEntry({
           property_id: activePropertyId,
+          unit_id: showRoomSelector ? (unitId || null) : null,
           year,
           month,
           expense_date: date,
@@ -278,6 +294,25 @@ export function ExpenseEntryDrawer({
             })}
           </div>
         </div>
+
+        {/* Room attribution - room-based properties with multiple rooms */}
+        {showRoomSelector && (
+          <div className="px-6 pt-4 pb-1">
+            <label className="text-[10px] uppercase tracking-[0.14em] block mb-1.5" style={{ color: "var(--text-faint)" }}>
+              Room (optional)
+            </label>
+            <Select
+              value={unitId}
+              ariaLabel="Attribute expense to a room"
+              placeholder="Whole property / shared"
+              onChange={setUnitId}
+              options={[
+                { value: "", label: "Whole property / shared" },
+                ...activeUnits.map((u) => ({ value: u.id, label: `${u.name}${u.tenant_name ? ` - ${u.tenant_name}` : ""}` })),
+              ]}
+            />
+          </div>
+        )}
 
         {/* Items */}
         <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-3">

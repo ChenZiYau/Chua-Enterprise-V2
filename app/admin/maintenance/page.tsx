@@ -6,6 +6,7 @@ import { OverviewCard } from "@/components/admin/OverviewCard";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 import { notionCreate, notionUpdate, notionDelete, isNotionId } from "@/lib/notionClient";
 import { todayIso as getTodayIso, startOfDay, daysAgoIso } from "@/lib/date";
 import type { MaintenanceEntry } from "@/types/rental";
@@ -1182,19 +1183,17 @@ function MaintenanceDialog({
                 />
               </Field>
               <Field label="Reported date">
-                <input
-                  type="date"
-                  className="ui-select"
+                <DatePickerField
                   value={form.reportedDate}
-                  onChange={(e) => setForm((f) => ({ ...f, reportedDate: e.target.value }))}
+                  onChange={(v) => setForm((f) => ({ ...f, reportedDate: v }))}
+                  ariaLabel="Reported date"
                 />
               </Field>
               <Field label="Start date">
-                <input
-                  type="date"
-                  className="ui-select"
+                <DatePickerField
                   value={form.startDate}
-                  onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
+                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  ariaLabel="Start date"
                 />
               </Field>
               <Field label="Duration days">

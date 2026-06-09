@@ -129,6 +129,7 @@ export function expenseCreateFields(e: ExpenseEntry, names: Names) {
   return {
     name: `${names.property ?? "Expense"} - ${e.category}${e.custom_category ? ` (${e.custom_category})` : ""} - ${periodLabel(e.year, e.month)}`.trim(),
     property: names.property ?? "",
+    unit: names.unit ?? "",
     year: e.year,
     month: e.month,
     expenseDate: e.expense_date ?? null,
@@ -144,6 +145,7 @@ export function expenseCreateFields(e: ExpenseEntry, names: Names) {
 export function expensePatchFields(patch: Partial<ExpenseEntry>, names: Names) {
   const f: Record<string, unknown> = {};
   if ("property_id" in patch) f.property = names.property ?? "";
+  if ("unit_id" in patch) f.unit = names.unit ?? "";
   if ("year" in patch) f.year = patch.year;
   if ("month" in patch) f.month = patch.month;
   if ("expense_date" in patch) f.expenseDate = patch.expense_date ?? null;

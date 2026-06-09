@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import {
   MONTHS,
@@ -758,20 +759,22 @@ function TenantDetailDrawer({
                       { value: "overdue", label: "Overdue" },
                     ]}
                   />
-                  <input
-                    type="month"
-                    className="ui-input w-auto"
+                  <DatePickerField
+                    granularity="month"
+                    className="w-[150px]"
                     value={histFrom}
-                    onChange={(e) => setHistFrom(e.target.value)}
-                    aria-label="History from month"
+                    onChange={setHistFrom}
+                    placeholder="From month"
+                    ariaLabel="History from month"
                   />
                   <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
-                  <input
-                    type="month"
-                    className="ui-input w-auto"
+                  <DatePickerField
+                    granularity="month"
+                    className="w-[150px]"
                     value={histTo}
-                    onChange={(e) => setHistTo(e.target.value)}
-                    aria-label="History to month"
+                    onChange={setHistTo}
+                    placeholder="To month"
+                    ariaLabel="History to month"
                   />
                   {(histStatus !== "all" || histFrom || histTo) && (
                     <button
@@ -997,8 +1000,14 @@ function TenantFormDrawer({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <TextInput label="Lease Start" type="date" value={leaseStart} onChange={setLeaseStart} />
-            <TextInput label="Lease End" type="date" value={leaseEnd} onChange={setLeaseEnd} />
+            <div>
+              <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Lease Start</label>
+              <DatePickerField value={leaseStart} onChange={setLeaseStart} ariaLabel="Lease Start" placeholder="Select date..." />
+            </div>
+            <div>
+              <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Lease End</label>
+              <DatePickerField value={leaseEnd} onChange={setLeaseEnd} ariaLabel="Lease End" placeholder="Select date..." />
+            </div>
           </div>
 
           <div>

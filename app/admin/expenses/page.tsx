@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
 import {
@@ -39,7 +40,7 @@ function fmt(value: number) {
 }
 
 export default function ExpensesPage() {
-  const { expenseEntries, visibleProperties, deleteExpenseEntry, updateExpenseEntry } = useRental();
+  const { expenseEntries, visibleProperties, deleteExpenseEntry, updateExpenseEntry, getUnit } = useRental();
   const confirm = useConfirm();
 
   const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
@@ -129,20 +130,22 @@ export default function ExpensesPage() {
 
       {/* Filters */}
       <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
-        <input
-          type="month"
-          className="ui-input w-auto"
+        <DatePickerField
+          granularity="month"
+          className="w-[150px]"
           value={fromMonth}
-          onChange={(e) => setFromMonth(e.target.value)}
-          aria-label="From month"
+          onChange={setFromMonth}
+          placeholder="From month"
+          ariaLabel="From month"
         />
         <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
-        <input
-          type="month"
-          className="ui-input w-auto"
+        <DatePickerField
+          granularity="month"
+          className="w-[150px]"
           value={toMonth}
-          onChange={(e) => setToMonth(e.target.value)}
-          aria-label="To month"
+          onChange={setToMonth}
+          placeholder="To month"
+          ariaLabel="To month"
         />
 
         <input
@@ -207,6 +210,9 @@ export default function ExpensesPage() {
                   Property
                 </th>
                 <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
+                  Room
+                </th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
                   Month
                 </th>
                 <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
@@ -249,6 +255,12 @@ export default function ExpensesPage() {
                       >
                         {prop?.name ?? entry.property_id}
                       </Link>
+                    </td>
+                    <td
+                      className="px-4 py-3"
+                      style={{ color: entry.unit_id ? "var(--text-secondary)" : "var(--text-faint)" }}
+                    >
+                      {entry.unit_id ? (getUnit(entry.unit_id)?.name ?? "-") : "Whole property"}
                     </td>
                     <td
                       className="px-4 py-3"
@@ -345,7 +357,7 @@ export default function ExpensesPage() {
                 style={{ borderColor: "var(--border-soft)" }}
               >
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-5 py-3 text-sm font-semibold"
                   style={{ color: "var(--text-primary)" }}
                 >

@@ -140,6 +140,8 @@ export interface RevenueEntry {
 export interface ExpenseEntry {
   id: string;
   property_id: string;
+  /** Optional room/unit this expense is attributed to. Empty = whole property. */
+  unit_id?: string | null;
   year: number;
   month: number;
   expense_date?: string | null;

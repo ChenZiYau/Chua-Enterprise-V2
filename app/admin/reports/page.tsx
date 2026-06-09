@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
-import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 import {
   MONTHS,
   MONTHS_FULL,
@@ -40,8 +40,6 @@ export default function ReportsPage() {
 
   const [year, setYear] = useState(CUR_YEAR);
   const [month, setMonth] = useState(CUR_MONTH);
-
-  const years = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i);
 
   const data = useMemo(() => {
     const revs = revenueEntries.filter((e) => e.year === year && e.month === month);
@@ -138,19 +136,16 @@ export default function ReportsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
-          <Select
-            className="w-auto min-w-[140px]"
+          <DatePickerField
+            granularity="month"
+            className="w-[170px]"
             ariaLabel="Report month"
-            value={String(month)}
-            onChange={(v) => setMonth(Number(v))}
-            options={MONTHS_FULL.map((m, i) => ({ value: String(i + 1), label: m }))}
-          />
-          <Select
-            className="w-auto min-w-[110px]"
-            ariaLabel="Report year"
-            value={String(year)}
-            onChange={(v) => setYear(Number(v))}
-            options={years.map((y) => ({ value: String(y), label: String(y) }))}
+            value={`${year}-${String(month).padStart(2, "0")}`}
+            onChange={(v) => {
+              const [yy, mm] = v.split("-").map(Number);
+              setYear(yy);
+              setMonth(mm);
+            }}
           />
           <button
             type="button"

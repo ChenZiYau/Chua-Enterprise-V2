@@ -5,7 +5,9 @@ import { useRental } from "@/context/RentalContext";
 import { RevenueEntryForm } from "@/components/property/RevenueEntryForm";
 import { ExpenseEntryForm } from "@/components/property/ExpenseEntryForm";
 import { Select } from "@/components/ui/Select";
+import { StepDatePicker } from "@/components/ui/DatePicker";
 import { MONTHS_FULL } from "@/types/rental";
+import { todayIso } from "@/lib/date";
 
 type Tab = "revenue" | "expense";
 
@@ -14,13 +16,15 @@ const labelStyle: React.CSSProperties = { color: "var(--text-faint)" };
 
 export default function QuickEntryPage() {
   const { visibleProperties, getUnitsForProperty, getProperty } = useRental();
-  const now = new Date();
 
   const [tab, setTab] = useState<Tab>("revenue");
   const [propertyId, setPropertyId] = useState("");
   const [unitId, setUnitId] = useState("");
-  const [year, setYear] = useState(now.getFullYear());
-  const [monthIdx, setMonthIdx] = useState(now.getMonth());
+  // The entry date drives the billing period (year + month) for the form.
+  const [entryDate, setEntryDate] = useState(todayIso());
+  const [y, m] = entryDate.split("-").map(Number);
+  const year = y;
+  const monthIdx = m - 1;
 
   // Default to the first property once properties hydrate from Notion.
   useEffect(() => {
@@ -39,9 +43,49 @@ export default function QuickEntryPage() {
 
   const showRoomSelector = tab === "revenue" && isRoomBased && units.length > 1;
 
+  // Left-panel date picker.
+  const datePanel = (
+    <div className="flex flex-col gap-2">
+      <label className={labelCls} style={labelStyle}>Entry date</label>
+      <StepDatePicker value={entryDate} onChange={setEntryDate} granularity="day" />
+      <p className="text-xs px-1" style={{ color: "var(--text-muted)" }}>
+        Billing period: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{MONTHS_FULL[monthIdx]} {year}</span>
+      </p>
+    </div>
+  );
+
+  // Property (+ room) selectors rendered atop the right column.
+  const contextSlot = (
+    <div className={"grid grid-cols-1 gap-3 " + (showRoomSelector ? "sm:grid-cols-2" : "")}>
+      <div>
+        <label className={labelCls} style={labelStyle}>Property</label>
+        <Select
+          value={propertyId}
+          placeholder="Select property..."
+          onChange={setPropertyId}
+          options={visibleProperties.map((p) => ({ value: p.id, label: p.name }))}
+        />
+      </div>
+      {showRoomSelector && (
+        <div>
+          <label className={labelCls} style={labelStyle}>Room</label>
+          <Select
+            value={unitId}
+            placeholder="Select room..."
+            onChange={setUnitId}
+            options={units.map((u) => ({
+              value: u.id,
+              label: `${u.name} - ${u.tenant_name || "Vacant"}`,
+            }))}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <div className="max-w-2xl mx-auto flex flex-col gap-5">
+      <div className="max-w-5xl mx-auto flex flex-col gap-5">
         {/* Title */}
         <div>
           <p className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>Quick Entry</p>
@@ -49,7 +93,7 @@ export default function QuickEntryPage() {
             Record {tab === "revenue" ? "revenue" : "an expense"}
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-            Pick a property, switch between revenue and expense, and save - all on one page.
+            Pick a date on the left, fill in the entry on the right, and save.
           </p>
         </div>
 
@@ -77,59 +121,10 @@ export default function QuickEntryPage() {
           })}
         </div>
 
-        {/* Shared selectors */}
-        <div className="ui-card p-4 sm:p-5 flex flex-col gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls} style={labelStyle}>Property</label>
-              <Select
-                value={propertyId}
-                placeholder="Select property..."
-                onChange={setPropertyId}
-                options={visibleProperties.map((p) => ({ value: p.id, label: p.name }))}
-              />
-            </div>
-            <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
-              <div>
-                <label className={labelCls} style={labelStyle}>Month</label>
-                <Select
-                  value={String(monthIdx)}
-                  onChange={(v) => setMonthIdx(Number(v))}
-                  options={MONTHS_FULL.map((m, i) => ({ value: String(i), label: m }))}
-                />
-              </div>
-              <div>
-                <label className={labelCls} style={labelStyle}>Year</label>
-                <div className="flex items-center gap-1.5">
-                  <button type="button" onClick={() => setYear((y) => y - 1)} className="ui-btn" style={{ padding: "0.45rem 0.55rem" }}>&lt;</button>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)", minWidth: 40, textAlign: "center" }}>{year}</span>
-                  <button type="button" onClick={() => setYear((y) => y + 1)} className="ui-btn" style={{ padding: "0.45rem 0.55rem" }}>&gt;</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Room selector - revenue, room-based properties with multiple rooms */}
-          {showRoomSelector && (
-            <div>
-              <label className={labelCls} style={labelStyle}>Room</label>
-              <Select
-                value={unitId}
-                placeholder="Select room..."
-                onChange={setUnitId}
-                options={units.map((u) => ({
-                  value: u.id,
-                  label: `${u.name} - ${u.tenant_name || "Vacant"}`,
-                }))}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Form */}
-        <div className="ui-card p-4 sm:p-6">
+        {/* Balanced two-panel entry — the form owns left/right columns + footer */}
+        <div className="ui-card overflow-hidden flex">
           {visibleProperties.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
+            <p className="text-sm text-center w-full py-8" style={{ color: "var(--text-muted)" }}>
               No properties yet. Add a property first to record entries.
             </p>
           ) : tab === "revenue" ? (
@@ -139,6 +134,8 @@ export default function QuickEntryPage() {
               unitId={unitId}
               year={year}
               month={monthIdx + 1}
+              datePanel={datePanel}
+              contextSlot={contextSlot}
             />
           ) : (
             <ExpenseEntryForm
@@ -146,6 +143,8 @@ export default function QuickEntryPage() {
               propertyId={propertyId}
               year={year}
               month={monthIdx + 1}
+              datePanel={datePanel}
+              contextSlot={contextSlot}
             />
           )}
         </div>

@@ -42,13 +42,25 @@ export function ExpenseEntryForm({
   year,
   month,
   onSaved,
+  datePanel,
+  contextSlot,
 }: {
   propertyId: string;
   year: number;
   month: number;
   onSaved?: () => void;
+  /** When provided, render the balanced two-column + sticky-footer layout. */
+  datePanel?: React.ReactNode;
+  /** Optional selectors (property) rendered atop the right column. */
+  contextSlot?: React.ReactNode;
 }) {
-  const { addExpenseEntry, getPropertyYTD } = useRental();
+  const { addExpenseEntry, getPropertyYTD, getProperty, getUnitsForProperty } = useRental();
+
+  const property = propertyId ? getProperty(propertyId) : undefined;
+  const units = useMemo(() => (propertyId ? getUnitsForProperty(propertyId) : []), [propertyId, getUnitsForProperty]);
+  const showRoomSelector = property?.rental_model === "room_rental" && units.length > 1;
+  // Empty = whole property / shared cost (optional attribution to one room).
+  const [unitId, setUnitId] = useState("");
 
   const [items, setItems] = useState<Item[]>([newItem()]);
   const [savedCount, setSavedCount] = useState(0);
@@ -81,6 +93,7 @@ export function ExpenseEntryForm({
         const desc = it.description.trim() || null;
         await addExpenseEntry({
           property_id: propertyId,
+          unit_id: showRoomSelector ? (unitId || null) : null,
           year,
           month,
           expense_date: date,
@@ -102,60 +115,83 @@ export function ExpenseEntryForm({
     }
   }
 
-  return (
-    <div className="flex flex-col gap-3 @container">
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        List everything you paid for this month - one line each.
-      </p>
+  // ── Field fragments (shared by both layouts; logic untouched) ──
+  const roomField = showRoomSelector ? (
+    <div>
+      <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] mb-1.5" style={{ color: "var(--text-faint)" }}>
+        Room (optional)
+      </label>
+      <Select
+        value={unitId}
+        ariaLabel="Attribute expense to a room"
+        placeholder="Whole property / shared"
+        onChange={setUnitId}
+        options={[
+          { value: "", label: "Whole property / shared" },
+          ...units.map((u) => ({ value: u.id, label: `${u.name}${u.tenant_name ? ` - ${u.tenant_name}` : ""}` })),
+        ]}
+      />
+    </div>
+  ) : null;
 
-      {items.map((it, i) => {
-        const amt = parseFloat(it.amount) || 0;
-        return (
-          <div key={it.key} className="rounded-xl p-3 flex flex-col gap-2.5"
-            style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
-                Item {i + 1}
-              </span>
-              <button type="button" onClick={() => removeRow(it.key)} aria-label="Remove item"
-                className="w-6 h-6 rounded flex items-center justify-center" style={{ color: "var(--text-faint)" }}>
-                <CloseIcon size={12} />
-              </button>
-            </div>
+  const intro = (
+    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+      List everything you paid for this month - one line each.
+    </p>
+  );
 
-            <input type="text" inputMode="text" placeholder="What was it? e.g. Fixed kitchen tap"
-              className="w-full px-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)]"
+  const itemRows = items.map((it, i) => {
+    const amt = parseFloat(it.amount) || 0;
+    return (
+      <div key={it.key} className="rounded-xl p-3 flex flex-col gap-2.5"
+        style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
+            Item {i + 1}
+          </span>
+          <button type="button" onClick={() => removeRow(it.key)} aria-label="Remove item"
+            className="w-6 h-6 rounded flex items-center justify-center" style={{ color: "var(--text-faint)" }}>
+            <CloseIcon size={12} />
+          </button>
+        </div>
+
+        <input type="text" inputMode="text" placeholder="What was it? e.g. Fixed kitchen tap"
+          className="w-full px-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)]"
+          style={{ borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" }}
+          value={it.description} onChange={(e) => updateItem(it.key, { description: e.target.value })} />
+
+        <div className="grid grid-cols-1 @sm:grid-cols-[1fr_140px] gap-2.5">
+          <Select
+            value={it.category}
+            ariaLabel={`Expense category for item ${i + 1}`}
+            onChange={(value) => updateItem(it.key, { category: value as ExpenseCategory })}
+            options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: EXPENSE_CATEGORY_LABEL[c] }))}
+          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-faint)" }}>RM</span>
+            <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00"
+              className="w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)] text-right tabular-nums"
               style={{ borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" }}
-              value={it.description} onChange={(e) => updateItem(it.key, { description: e.target.value })} />
-
-            <div className="grid grid-cols-1 @sm:grid-cols-[1fr_140px] gap-2.5">
-              <Select
-                value={it.category}
-                ariaLabel={`Expense category for item ${i + 1}`}
-                onChange={(value) => updateItem(it.key, { category: value as ExpenseCategory })}
-                options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: EXPENSE_CATEGORY_LABEL[c] }))}
-              />
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-faint)" }}>RM</span>
-                <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00"
-                  className="w-full pl-9 pr-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)] text-right tabular-nums"
-                  style={{ borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" }}
-                  value={it.amount} onChange={(e) => updateItem(it.key, { amount: e.target.value })} />
-              </div>
-            </div>
-            {amt > 0 && it.description.trim() === "" && (
-              <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>Tip: add a short note so you remember what this was.</p>
-            )}
+              value={it.amount} onChange={(e) => updateItem(it.key, { amount: e.target.value })} />
           </div>
-        );
-      })}
+        </div>
+        {amt > 0 && it.description.trim() === "" && (
+          <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>Tip: add a short note so you remember what this was.</p>
+        )}
+      </div>
+    );
+  });
 
-      <button type="button" onClick={addRow}
-        className="w-full rounded-xl py-2.5 text-sm font-medium transition"
-        style={{ border: "1px dashed var(--border-strong)", color: "var(--accent)", background: "transparent" }}>
-        + Add another item
-      </button>
+  const addRowButton = (
+    <button type="button" onClick={addRow}
+      className="w-full rounded-xl py-2.5 text-sm font-medium transition"
+      style={{ border: "1px dashed var(--border-strong)", color: "var(--accent)", background: "transparent" }}>
+      + Add another item
+    </button>
+  );
 
+  const banners = (
+    <>
       {savedCount > 0 && (
         <div className="rounded-lg px-4 py-2.5 flex items-center gap-2" style={{ background: "rgba(47,158,111,0.10)", border: "1px solid var(--success)" }}>
           <span style={{ color: "var(--success)" }}>&#10003;</span>
@@ -169,8 +205,68 @@ export function ExpenseEntryForm({
           {saveError}
         </div>
       )}
+    </>
+  );
 
-      {/* Total + action */}
+  const totalDisplay = (
+    <div className="flex flex-col">
+      <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
+        Total - {validItems.length} {validItems.length === 1 ? "item" : "items"}
+      </span>
+      <span className="text-xl font-bold tabular-nums leading-tight" style={{ color: "var(--danger)" }}>{fmt(total)}</span>
+      <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+        Expenses YTD becomes {fmt(ytd.expenses + total)}
+      </span>
+    </div>
+  );
+  const saveButton = (
+    <button type="button" className="ui-btn ui-btn-primary justify-center" disabled={!canSave || saving}
+      style={{ opacity: !canSave || saving ? 0.55 : 1 }} onClick={handleSave}>
+      {saving ? "Saving..." : `Save ${validItems.length || ""} ${validItems.length === 1 ? "expense" : "expenses"}`.trim()}
+    </button>
+  );
+
+  // ── Balanced split layout: left = date, right scrolls, sticky footer ──
+  if (datePanel) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] flex-1 min-h-0">
+          {/* LEFT — date picker (scrolls if it exceeds height) */}
+          <div className="flex flex-col gap-3 px-5 py-4 lg:border-r overflow-y-auto min-h-0" style={{ borderColor: "var(--border-soft)" }}>
+            {datePanel}
+          </div>
+
+          {/* RIGHT — expense items (only this body scrolls) */}
+          <div className="@container flex flex-col gap-3 px-5 py-4 overflow-y-auto min-h-0">
+            {contextSlot}
+            {roomField}
+            {intro}
+            {itemRows}
+            {addRowButton}
+          </div>
+        </div>
+
+        {/* STICKY FOOTER — total + action, always visible */}
+        <div className="px-5 py-3 flex flex-col gap-2.5 shrink-0 sticky bottom-0 z-10" style={{ borderTop: "1px solid var(--border-soft)", background: "var(--surface)" }}>
+          {banners}
+          <div className="flex items-center justify-between gap-4">
+            {totalDisplay}
+            <div className="flex">{saveButton}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Original stacked layout (unchanged behavior) ──
+  return (
+    <div className="flex flex-col gap-3 @container">
+      {contextSlot}
+      {roomField}
+      {intro}
+      {itemRows}
+      {addRowButton}
+      {banners}
       <div className="flex items-center justify-between pt-1">
         <div className="flex flex-col">
           <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
@@ -182,10 +278,7 @@ export function ExpenseEntryForm({
         </div>
         <span className="text-xl font-bold tabular-nums" style={{ color: "var(--danger)" }}>{fmt(total)}</span>
       </div>
-      <button type="button" className="ui-btn ui-btn-primary justify-center" disabled={!canSave || saving}
-        style={{ opacity: !canSave || saving ? 0.55 : 1 }} onClick={handleSave}>
-        {saving ? "Saving..." : `Save ${validItems.length || ""} ${validItems.length === 1 ? "expense" : "expenses"}`.trim()}
-      </button>
+      {saveButton}
     </div>
   );
 }

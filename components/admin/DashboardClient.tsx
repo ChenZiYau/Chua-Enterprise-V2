@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 import { notionUpdate, isNotionId } from "@/lib/notionClient";
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, type PaymentMethod, type PaymentStatus, type RevenueEntry } from "@/types/rental";
 import type {
@@ -737,7 +738,7 @@ function RentItemDrawer({
               value={amount} onChange={(e) => setAmount(e.target.value)} />
           </EditField>
           <EditField label="Payment date (optional)">
-            <input type="date" className={fieldInputCls} style={fieldInputStyle} value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+            <DatePickerField value={payDate} onChange={setPayDate} ariaLabel="Payment date" />
           </EditField>
           {error ? <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p> : null}
         </div>
@@ -1141,7 +1142,7 @@ function MaintItemDrawer({
               <input className={fieldInputCls} style={fieldInputStyle} value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} />
             </EditField>
             <EditField label="Due date">
-              <input type="date" className={fieldInputCls} style={fieldInputStyle} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <DatePickerField value={dueDate} onChange={setDueDate} ariaLabel="Due date" />
             </EditField>
           </div>
           <EditField label="Description">

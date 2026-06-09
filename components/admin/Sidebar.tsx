@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { useMobileNav } from "./MobileNavContext";
 import {
-  IconQuickEntry,
   IconDashboard,
   IconProperties,
   IconRevenue,
@@ -25,18 +24,47 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
 };
 
-const items: NavItem[] = [
-  { label: "Quick Entry", href: "/admin/entry", icon: IconQuickEntry },
-  { label: "Dashboard", href: "/admin/dashboard", icon: IconDashboard },
-  { label: "Properties", href: "/admin/properties", icon: IconProperties },
-  { label: "Revenue", href: "/admin/revenue", icon: IconRevenue },
-  { label: "Expenses", href: "/admin/expenses", icon: IconExpenses },
-  { label: "Invoices", href: "/admin/invoices", icon: IconInvoices },
-  { label: "Tenants", href: "/admin/tenants", icon: IconTenants },
-  { label: "Maintenance", href: "/admin/maintenance", icon: IconMaintenance },
-  { label: "Insights", href: "/admin/insights", icon: IconReports },
-  { label: "Reports", href: "/admin/reports", icon: IconReports },
-  { label: "Settings", href: "/admin/settings", icon: IconSettings },
+type NavSection = {
+  title: string;
+  items: NavItem[];
+};
+
+const sections: NavSection[] = [
+  {
+    title: "Management",
+    items: [
+      { label: "Properties", href: "/admin/properties", icon: IconProperties },
+      { label: "Tenants", href: "/admin/tenants", icon: IconTenants },
+    ],
+  },
+  {
+    title: "Financials",
+    items: [
+      { label: "Revenue", href: "/admin/revenue", icon: IconRevenue },
+      { label: "Expenses", href: "/admin/expenses", icon: IconExpenses },
+      { label: "Invoices", href: "/admin/invoices", icon: IconInvoices },
+    ],
+  },
+  {
+    title: "Operations",
+    items: [
+      { label: "Maintenance", href: "/admin/maintenance", icon: IconMaintenance },
+    ],
+  },
+  {
+    title: "Analytics",
+    items: [
+      { label: "Dashboard", href: "/admin/dashboard", icon: IconDashboard },
+      { label: "Insights", href: "/admin/insights", icon: IconReports },
+      { label: "Reports", href: "/admin/reports", icon: IconReports },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { label: "Settings", href: "/admin/settings", icon: IconSettings },
+    ],
+  },
 ];
 
 function isActive(pathname: string | null, href: string) {
@@ -125,28 +153,46 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-1 flex-1 overflow-y-auto mt-2">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(pathname, item.href);
-          return (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="ui-nav-item"
-              data-active={active || undefined}
-              onClick={() => setOpen(false)}
-              title={mini ? item.label : undefined}
-              style={
-                mini
-                  ? { justifyContent: "center", paddingLeft: 0, paddingRight: 0 }
-                  : undefined
-              }
-            >
-              <Icon className="ui-nav-icon" />
-              {!mini && <span>{item.label}</span>}
-            </Link>
-          );
-        })}
+        {sections.map((section) => (
+          <div key={section.title} className="flex flex-col gap-1">
+            {mini ? (
+              <div
+                className="mx-auto my-2 h-px w-6"
+                style={{ background: "rgba(255,255,255,0.08)" }}
+                aria-hidden
+              />
+            ) : (
+              <p
+                className="px-2.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: "var(--sidebar-text-muted)" }}
+              >
+                {section.title}
+              </p>
+            )}
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(pathname, item.href);
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="ui-nav-item"
+                  data-active={active || undefined}
+                  onClick={() => setOpen(false)}
+                  title={mini ? item.label : undefined}
+                  style={
+                    mini
+                      ? { justifyContent: "center", paddingLeft: 0, paddingRight: 0 }
+                      : undefined
+                  }
+                >
+                  <Icon className="ui-nav-icon" />
+                  {!mini && <span>{item.label}</span>}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="pt-4 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>

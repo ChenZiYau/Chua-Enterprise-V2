@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChartPoint, ChartResult, RangeType } from "@/lib/revenueChart";
+import { DatePickerField } from "@/components/ui/DatePicker";
 
 // Big virtual canvas so SVG content scales down in real layouts.
 const WIDTH = 1200;
@@ -238,32 +239,30 @@ export function YearlyChart() {
 
           {rangeType === "custom" ? (
             <div className="flex flex-wrap items-end gap-2 sm:gap-3">
-              <label className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
                   Start date
                 </span>
-                <input
-                  type="date"
+                <DatePickerField
+                  className="w-[160px]"
                   value={custom.start}
                   max={custom.end || undefined}
-                  onChange={(e) => setCustom((c) => ({ ...c, start: e.target.value }))}
-                  className="px-2.5 py-1.5 text-xs rounded-md outline-none"
-                  style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)", color: "var(--text-primary)" }}
+                  onChange={(v) => setCustom((c) => ({ ...c, start: v }))}
+                  ariaLabel="Custom range start date"
                 />
-              </label>
-              <label className="flex flex-col gap-1">
+              </div>
+              <div className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
                   End date
                 </span>
-                <input
-                  type="date"
+                <DatePickerField
+                  className="w-[160px]"
                   value={custom.end}
                   min={custom.start || undefined}
-                  onChange={(e) => setCustom((c) => ({ ...c, end: e.target.value }))}
-                  className="px-2.5 py-1.5 text-xs rounded-md outline-none"
-                  style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)", color: "var(--text-primary)" }}
+                  onChange={(v) => setCustom((c) => ({ ...c, end: v }))}
+                  ariaLabel="Custom range end date"
                 />
-              </label>
+              </div>
               <button
                 type="button"
                 onClick={applyCustom}
