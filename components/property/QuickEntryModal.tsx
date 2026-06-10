@@ -36,7 +36,11 @@ export function QuickEntryModal({
   const [unitId, setUnitId] = useState("");
   // The entry date drives the billing period (year + month) for the form.
   const [entryDate, setEntryDate] = useState(todayIso());
-  const [y, m] = entryDate.split("-").map(Number);
+  // Collapsible Entry Date section. Expanded by default; reset to open on every
+  // modal open (see effect below) so the calendar is always visible on mount,
+  // regardless of how it was left last time. The user can still collapse it.
+  const [dateOpen, setDateOpen] = useState(true);
+  const [y, m, d] = entryDate.split("-").map(Number);
   const year = y;
   const monthIdx = m - 1;
 
@@ -52,6 +56,7 @@ export function QuickEntryModal({
     if (!open) return;
     setTab(initialTab);
     setEntryDate(todayIso());
+    setDateOpen(true);
     setUnitId(getUnitsForProperty(propertyId)[0]?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, propertyId, initialTab]);
@@ -84,13 +89,45 @@ export function QuickEntryModal({
   const handleSaved = () => setTimeout(onClose, 700);
 
   // Left-panel date picker (the property name shows in the modal header).
+  // The label header toggles the calendar open/closed; when collapsed it shows
+  // the selected date inline so it's still clear what's picked.
   const datePanel = (
     <div className="flex flex-col gap-2">
-      <label className={labelCls} style={labelStyle}>Entry date</label>
-      <StepDatePicker value={entryDate} onChange={setEntryDate} granularity="day" />
-      <p className="text-xs px-1" style={{ color: "var(--text-muted)" }}>
-        Billing period: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{MONTHS_FULL[monthIdx]} {year}</span>
-      </p>
+      <button
+        type="button"
+        onClick={() => setDateOpen((o) => !o)}
+        aria-expanded={dateOpen}
+        className="relative flex items-center justify-center w-full text-center rounded-lg px-3 py-2.5 transition hover:bg-[var(--surface-subtle)]"
+        style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] leading-none" style={labelStyle}>
+          Entry date
+          {!dateOpen && (
+            <span style={{ color: "var(--text-muted)" }}> — {d} {MONTHS_FULL[monthIdx]} {year}</span>
+          )}
+        </span>
+        <svg
+          width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          className="absolute right-3 top-0 bottom-0 my-auto shrink-0 transition-transform"
+          style={{ color: "var(--text-muted)", transform: dateOpen ? "rotate(180deg)" : "none" }}
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {dateOpen && (
+        <>
+          <StepDatePicker
+            value={entryDate}
+            onChange={setEntryDate}
+            granularity="day"
+            className="shadow-[0_8px_24px_rgba(15,17,22,0.18)]"
+          />
+          <p className="text-xs px-1" style={{ color: "var(--text-muted)" }}>
+            Billing period: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{MONTHS_FULL[monthIdx]} {year}</span>
+          </p>
+        </>
+      )}
     </div>
   );
 

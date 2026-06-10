@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
-import { DatePickerField } from "@/components/ui/DatePicker";
+import { DatePickerField, StepDatePicker } from "@/components/ui/DatePicker";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import {
   MONTHS,
@@ -266,6 +266,17 @@ export default function TenantsPage() {
               onView={() => setDrawer({ mode: "view", tenant })}
               onEdit={() => setDrawer({ mode: "edit", tenant })}
               onDelete={() => handleDelete(tenant)}
+              onSetLeaseEnd={async (iso) => {
+                setActionError(null);
+                try {
+                  // Reuse the existing tenant-update path; only touch lease_end.
+                  await updateTenant(tenant.id, { lease_end: iso });
+                } catch (err) {
+                  setActionError(
+                    err instanceof Error ? err.message : "Could not update lease end date."
+                  );
+                }
+              }}
             />
           ))}
         </div>
@@ -470,6 +481,7 @@ function TenantCard({
   onView,
   onEdit,
   onDelete,
+  onSetLeaseEnd,
 }: {
   tenant: Tenant;
   unitLabel: string | null;
@@ -478,6 +490,7 @@ function TenantCard({
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onSetLeaseEnd: (iso: string) => void | Promise<void>;
 }) {
   return (
     <div
@@ -556,18 +569,21 @@ function TenantCard({
           </span>
         </div>
         <div
-          className="pl-3 flex flex-col gap-1 min-w-0"
+          className="pl-3 flex items-end justify-between gap-2 min-w-0"
           style={{ borderLeft: "1px solid var(--border-soft)" }}
         >
-          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-            Lease
-          </span>
-          <span
-            className="text-sm font-semibold truncate"
-            style={{ color: lease ? LEASE_TONE_COLORS[lease.tone].text : "var(--text-faint)" }}
-          >
-            {lease ? lease.label : "—"}
-          </span>
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+              Lease
+            </span>
+            <span
+              className="text-sm font-semibold truncate"
+              style={{ color: lease ? LEASE_TONE_COLORS[lease.tone].text : "var(--text-faint)" }}
+            >
+              {lease ? lease.label : "—"}
+            </span>
+          </div>
+          <LeaseEndPicker value={tenant.lease_end} onChange={onSetLeaseEnd} />
         </div>
       </div>
     </div>
@@ -592,6 +608,80 @@ function CardRow({
       >
         {value ?? "-"}
       </dd>
+    </div>
+  );
+}
+
+/** Cogwheel trigger that opens the shared StepDatePicker in a small popover
+ *  (mirrors DatePickerField's popover) to edit the lease end date. Click-only
+ *  date pick; selecting commits via `onChange` and closes. Closes on outside
+ *  click / Esc. Sits at the bottom-right of the Lease status cell; changing the
+ *  date reflows the LEASE badge. All clicks are stopped so they don't trigger
+ *  the card's open-drawer onClick. */
+function LeaseEndPicker({
+  value,
+  onChange,
+}: {
+  value?: string | null;
+  onChange: (iso: string) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative shrink-0"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        aria-label="Change lease end date"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="Change lease end date"
+        className="w-11 h-11 shrink-0 rounded-lg inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
+        style={{ color: open ? "var(--accent)" : "var(--text-muted)" }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 bottom-[calc(100%+6px)] z-[70] w-[280px] max-w-[88vw]"
+          style={{ filter: "drop-shadow(0 16px 40px rgba(0,0,0,0.22))" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <StepDatePicker
+            value={value ?? ""}
+            onChange={(iso) => onChange(iso)}
+            granularity="day"
+            onCommit={() => setOpen(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
