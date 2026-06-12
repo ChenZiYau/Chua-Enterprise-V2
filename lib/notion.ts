@@ -104,6 +104,9 @@ export type PropertyRow = {
   propertyType: string;
   status: string;
   imageUrl: string;
+  /** Optional newline/comma-separated extra photo URLs. Reads a "Gallery URLs"
+   *  rich-text property if present; empty until that schema field is added. */
+  galleryUrls: string;
   description: string;
   totalUnits: number;
   rentedUnits: number;
@@ -121,6 +124,9 @@ export type UnitRow = {
   tenantName: string;
   rentalRate: number;
   electricityFreeUnits: number;
+  /** Optional per-room photo URLs (newline/comma separated). Reads a "Gallery
+   *  URLs" rich-text property if present; empty until that field is added. */
+  galleryUrls: string;
 };
 
 export type TenantRow = {
@@ -205,6 +211,7 @@ export async function getProperties(): Promise<PropertyRow[]> {
     propertyType: txt(r.properties["Property Type"]),
     status: txt(r.properties["Status"]),
     imageUrl: txt(r.properties["Image URL"]),
+    galleryUrls: txt(r.properties["Gallery URLs"]),
     description: txt(r.properties["Description"]),
     totalUnits: num(r.properties["Total Units"]),
     rentedUnits: num(r.properties["Rented Units"]),
@@ -225,6 +232,7 @@ export async function getUnits(): Promise<UnitRow[]> {
     tenantName: txt(r.properties["Tenant Name"]),
     rentalRate: num(r.properties["Rental Rate"]),
     electricityFreeUnits: num(r.properties["Electricity Free Units"]),
+    galleryUrls: txt(r.properties["Gallery URLs"]),
   }));
 }
 
@@ -491,6 +499,7 @@ function buildPropertyProps(f: AnyFields): Record<string, PropValue> {
   if (has(f, "propertyType")) p["Property Type"] = pSelect(f.propertyType as string);
   if (has(f, "status")) p["Status"] = pSelect(f.status as string);
   if (has(f, "imageUrl")) p["Image URL"] = pUrl(f.imageUrl as string);
+  if (has(f, "galleryUrls")) p["Gallery URLs"] = pText(f.galleryUrls as string);
   if (has(f, "description")) p["Description"] = pText(f.description as string);
   if (has(f, "totalUnits")) p["Total Units"] = pNum(f.totalUnits as number);
   if (has(f, "rentedUnits")) p["Rented Units"] = pNum(f.rentedUnits as number);
@@ -509,6 +518,7 @@ function buildUnitProps(f: AnyFields): Record<string, PropValue> {
   if (has(f, "tenantName")) p["Tenant Name"] = pText(f.tenantName as string);
   if (has(f, "rentalRate")) p["Rental Rate"] = pNum(f.rentalRate as number);
   if (has(f, "electricityFreeUnits")) p["Electricity Free Units"] = pNum(f.electricityFreeUnits as number);
+  if (has(f, "galleryUrls")) p["Gallery URLs"] = pText(f.galleryUrls as string);
   return p;
 }
 

@@ -183,14 +183,14 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       id: string; name: string; slug: string; shortName: string;
       address: string; city: string; state: string; postcode: string;
       rentalModel: string; propertyType: string; status: string;
-      imageUrl: string; description: string;
+      imageUrl: string; galleryUrls: string; description: string;
       totalUnits: number; rentedUnits: number;
       ytdRevenue: number; ytdExpenses: number;
     };
     type NPUnit = {
       id: string; name: string; property: string; label: string;
       sortOrder: number; isRented: boolean; tenantName: string;
-      rentalRate: number; electricityFreeUnits: number;
+      rentalRate: number; electricityFreeUnits: number; galleryUrls: string;
     };
     type NPRevenue = {
       id: string; name: string; property: string; unit: string;
@@ -252,6 +252,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           property_type: (p.propertyType as PropertyType) || "house",
           status: (p.status as PropertyStatus) || "active",
           image_url: p.imageUrl || null,
+          gallery_urls: p.galleryUrls || null,
           description: p.description || null,
           total_units: p.totalUnits || 0,
           rented_units: p.rentedUnits || 0,
@@ -272,6 +273,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           tenant_name: u.tenantName || null,
           rental_rate: u.rentalRate || 0,
           electricity_free_units: u.electricityFreeUnits || 0,
+          gallery_urls: u.galleryUrls || null,
         }));
         const unitIdByKey = new Map<string, string>();
         for (const u of uData) {

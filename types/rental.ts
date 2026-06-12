@@ -93,6 +93,8 @@ export interface Property {
   property_type: PropertyType;
   status: PropertyStatus;
   image_url?: string | null;
+  /** Extra photo URLs for the public share gallery, newline/comma separated. */
+  gallery_urls?: string | null;
   description?: string | null;
   total_units: number;
   rented_units: number;
@@ -112,6 +114,8 @@ export interface Unit {
   tenant_name?: string | null;
   rental_rate?: number | null;
   electricity_free_units: number;
+  /** Per-room photo URLs for the public share gallery, newline/comma separated. */
+  gallery_urls?: string | null;
 }
 
 export interface RevenueEntry {

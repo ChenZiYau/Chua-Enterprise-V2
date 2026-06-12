@@ -16,6 +16,7 @@ import {
   IconReports,
   IconSettings,
   IconLogout,
+  IconShare,
 } from "./icons";
 
 type NavItem = {
@@ -49,6 +50,7 @@ const sections: NavSection[] = [
     title: "Operations",
     items: [
       { label: "Maintenance", href: "/admin/maintenance", icon: IconMaintenance },
+      { label: "Share", href: "/admin/share", icon: IconShare },
     ],
   },
   {

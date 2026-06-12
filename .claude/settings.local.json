@@ -19,7 +19,12 @@
       "Bash(grep -ivE \"\\\\.next[\\\\\\\\/]types\")",
       "PowerShell(npx tsc --noEmit)",
       "PowerShell(npm run *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "PowerShell($p = Start-Process npm -ArgumentList \"run\",\"dev\" -PassThru -WindowStyle Hidden -RedirectStandardOutput \"$env:TEMP\\\\dev.out\" -RedirectStandardError \"$env:TEMP\\\\dev.err\"; Write-Output \"pid=$\\($p.Id\\)\")",
+      "Bash(echo \"started pid $!\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('count:',len\\(d.get\\('data',[]\\)\\)\\); print\\(json.dumps\\(d['data'][0],indent=2\\) if d.get\\('data'\\) else d\\)\")",
+      "Bash(kill 461)",
+      "Bash(rm -f /tmp/rp.html /tmp/roompage.html /tmp/dev.out)"
     ]
   },
   "enabledMcpjsonServers": [

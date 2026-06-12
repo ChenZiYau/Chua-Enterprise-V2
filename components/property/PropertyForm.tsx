@@ -51,6 +51,7 @@ function defaultValues(): PropertyFormValues {
     property_type: "house",
     status: "active",
     image_url: "",
+    gallery_urls: "",
     description: "",
     total_units: 1,
     rented_units: 0,
@@ -244,14 +245,27 @@ export function PropertyForm({
               onChange={(e) => set("postcode", e.target.value)}
             />
           </Field>
-          <Field label="Image URL" full>
+          <Field label="Cover image URL" full>
             <input
               className={inputClass}
               style={inputStyle}
-              placeholder="https://..."
+              placeholder="https://... (shown as the hero photo)"
               value={values.image_url ?? ""}
               onChange={(e) => set("image_url", e.target.value)}
             />
+          </Field>
+          <Field label="Gallery photos — one URL per line" full>
+            <textarea
+              rows={3}
+              className={inputClass}
+              style={inputStyle}
+              placeholder={"https://photo-1.jpg\nhttps://photo-2.jpg"}
+              value={values.gallery_urls ?? ""}
+              onChange={(e) => set("gallery_urls", e.target.value)}
+            />
+            <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+              Extra photos shown on the public share page, after the cover image.
+            </span>
           </Field>
         </div>
       </Group>
