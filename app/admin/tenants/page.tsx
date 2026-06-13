@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { EditModalShell } from "@/components/ui/EditModalShell";
 import { Select } from "@/components/ui/Select";
 import { DatePickerField, StepDatePicker } from "@/components/ui/DatePicker";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
@@ -751,13 +752,13 @@ function TenantDetailDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl h-full overflow-y-auto"
-        style={{ background: "var(--surface)" }}
+        className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl"
+        style={{ background: "var(--surface)", border: "1px solid var(--border-soft)", boxShadow: "0 24px 64px rgba(15,17,22,0.24)", animation: "emsPop 180ms cubic-bezier(.2,.7,.2,1)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -1018,28 +1019,31 @@ function TenantFormDrawer({
     }
   }
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end"
-      style={{ background: "rgba(0,0,0,0.5)" }}
-      onClick={onClose}
-    >
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-lg h-full overflow-y-auto flex flex-col"
-        style={{ background: "var(--surface)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex items-center justify-between p-6 border-b sticky top-0 z-10"
-          style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}
-        >
-          <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-            {initial ? "Edit Tenant" : "Add Tenant"}
-          </h3>
-        </div>
+  const dirty =
+    name.trim() !== (initial?.name ?? "") ||
+    icNumber !== (initial?.ic_number ?? "") ||
+    email !== (initial?.email ?? "") ||
+    phone !== (initial?.phone ?? "") ||
+    previousAddress !== (initial?.previous_address ?? "") ||
+    unitId !== (initial?.unit_id ?? "") ||
+    leaseStart !== (initial?.lease_start ?? "") ||
+    leaseEnd !== (initial?.lease_end ?? "") ||
+    notes !== (initial?.notes ?? "");
 
-        <div className="p-6 flex flex-col gap-4 text-sm flex-1">
+  return (
+    <EditModalShell
+      open
+      onClose={onClose}
+      placement="center"
+      widthClass="max-w-3xl"
+      eyebrow={initial ? "Edit tenant" : "New tenant"}
+      title={initial ? initial.name : "Add tenant"}
+      dirty={dirty}
+      saving={saving}
+      primaryFormId="tenant-form"
+      primaryLabel={initial ? "Save Changes" : "Add Tenant"}
+    >
+      <form id="tenant-form" onSubmit={handleSubmit} className="flex flex-col gap-4 text-sm">
           <TextInput label="Full Name *" value={name} onChange={setName} required />
           <TextInput label="IC Number" value={icNumber} onChange={setIcNumber} placeholder="e.g. 901231-14-5678" />
           <div className="grid grid-cols-2 gap-3">
@@ -1109,20 +1113,9 @@ function TenantFormDrawer({
               className="ui-input w-full"
             />
           </div>
-        </div>
-
-        <div
-          className="p-4 border-t flex justify-end gap-2 sticky bottom-0"
-          style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}
-        >
-          {error && <p className="mr-auto self-center text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
-          <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="ui-btn ui-btn-primary" disabled={saving}>
-            {saving ? "Saving..." : initial ? "Save Changes" : "Add Tenant"}
-          </button>
-        </div>
+        {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
       </form>
-    </div>
+    </EditModalShell>
   );
 }
 

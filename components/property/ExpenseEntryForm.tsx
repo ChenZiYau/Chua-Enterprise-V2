@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { Select } from "@/components/ui/Select";
 import {
@@ -42,6 +42,7 @@ export function ExpenseEntryForm({
   year,
   month,
   onSaved,
+  onDirtyChange,
   datePanel,
   contextSlot,
 }: {
@@ -49,6 +50,8 @@ export function ExpenseEntryForm({
   year: number;
   month: number;
   onSaved?: () => void;
+  /** Report whether the user has entered any expense detail yet. */
+  onDirtyChange?: (dirty: boolean) => void;
   /** When provided, render the balanced two-column + sticky-footer layout. */
   datePanel?: React.ReactNode;
   /** Optional selectors (property) rendered atop the right column. */
@@ -68,6 +71,12 @@ export function ExpenseEntryForm({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const validItems = useMemo(() => items.filter((it) => (parseFloat(it.amount) || 0) > 0), [items]);
+
+  // Dirty once any line has a description or amount typed in.
+  useEffect(() => {
+    if (!onDirtyChange) return;
+    onDirtyChange(items.some((it) => it.description.trim() !== "" || it.amount.trim() !== ""));
+  }, [items, onDirtyChange]);
   const total = validItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
   const canSave = validItems.length > 0 && !!propertyId;
   const ytd = propertyId ? getPropertyYTD(propertyId, year) : { revenue: 0, expenses: 0, net: 0 };

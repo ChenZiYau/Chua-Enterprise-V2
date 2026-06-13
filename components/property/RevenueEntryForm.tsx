@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import {
   MONTHS_FULL,
@@ -36,6 +36,7 @@ export function RevenueEntryForm({
   year,
   month,
   onSaved,
+  onDirtyChange,
   datePanel,
   contextSlot,
 }: {
@@ -44,6 +45,8 @@ export function RevenueEntryForm({
   year: number;
   month: number;
   onSaved?: () => void;
+  /** Report whether the user has edited the form away from its loaded values. */
+  onDirtyChange?: (dirty: boolean) => void;
   /** When provided, render the balanced two-column + sticky-footer layout:
    *  left = this date panel + Payment group, right = charges (scrolls). */
   datePanel?: React.ReactNode;
@@ -68,6 +71,8 @@ export function RevenueEntryForm({
   const [notes, setNotes] = useState("");
   const [prorate, setProrate] = useState(false);
   const [startDate, setStartDate] = useState("");
+  // Snapshot of the loaded values, so we can tell user edits from initial load.
+  const baselineRef = useRef<string>("");
 
   const unit = getUnit(unitId);
   const existingEntry = unitId ? getRevenueEntry(unitId, year, month) : undefined;
@@ -79,17 +84,28 @@ export function RevenueEntryForm({
     setErrors({});
     const u = getUnit(unitId);
     const ex = unitId ? getRevenueEntry(unitId, year, month) : undefined;
-    // Whether we restored a prorated entry (skips the trailing reset below).
-    let restored = false;
+    const firstOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+
+    let nextRental = "";
+    let nextElec = "";
+    let nextOther = "";
+    let nextPayDate = firstOfMonth;
+    let nextPayMethod: PaymentMethod = "bank_transfer";
+    let nextCustom = "";
+    let nextPayStatus: PaymentStatus = "paid";
+    let nextNotes = "";
+    let nextProrate = false;
+    let nextStart = firstOfMonth;
+
     if (ex) {
-      setRental(String(ex.rental_amount));
-      setElecUnits(ex.electricity_units != null ? String(ex.electricity_units) : "");
-      setOtherCharges(ex.other_charges_amount != null ? String(ex.other_charges_amount) : "");
-      setPayDate(ex.payment_date ?? `${year}-${String(month).padStart(2, "0")}-01`);
-      setPayMethod(ex.payment_method ?? "bank_transfer");
-      setCustomPayMethod(ex.custom_payment_method ?? "");
-      setPayStatus(ex.payment_status ?? "paid");
-      setNotes(ex.notes ?? "");
+      nextRental = String(ex.rental_amount);
+      nextElec = ex.electricity_units != null ? String(ex.electricity_units) : "";
+      nextOther = ex.other_charges_amount != null ? String(ex.other_charges_amount) : "";
+      nextPayDate = ex.payment_date ?? firstOfMonth;
+      nextPayMethod = ex.payment_method ?? "bank_transfer";
+      nextCustom = ex.custom_payment_method ?? "";
+      nextPayStatus = ex.payment_status ?? "paid";
+      nextNotes = ex.notes ?? "";
 
       // If this entry was saved prorated, restore the editable full rent from
       // the note's ratio (approximate — prior rounding may drift by a cent).
@@ -97,30 +113,43 @@ export function RevenueEntryForm({
       if (parsed) {
         const fullRent = Math.round((ex.rental_amount * parsed.daysInMonth / parsed.chargeableDays) * 100) / 100;
         if (Number.isFinite(fullRent) && fullRent > 0) {
-          setRental(String(fullRent));
-          setNotes(stripProrationNote(ex.notes ?? ""));
-          setProrate(true);
-          setStartDate(parsed.startISO);
-          restored = true;
+          nextRental = String(fullRent);
+          nextNotes = stripProrationNote(ex.notes ?? "");
+          nextProrate = true;
+          nextStart = parsed.startISO;
         }
       }
     } else {
-      setRental(u?.rental_rate ? String(u.rental_rate) : "");
-      setElecUnits("");
-      setOtherCharges("");
-      setPayDate(`${year}-${String(month).padStart(2, "0")}-01`);
-      setPayMethod("bank_transfer");
-      setCustomPayMethod("");
-      setPayStatus("paid");
-      setNotes("");
+      nextRental = u?.rental_rate ? String(u.rental_rate) : "";
     }
-    // Default proration off (first of the billing month) unless we restored it.
-    if (!restored) {
-      setProrate(false);
-      setStartDate(`${year}-${String(month).padStart(2, "0")}-01`);
-    }
+
+    setRental(nextRental);
+    setElecUnits(nextElec);
+    setOtherCharges(nextOther);
+    setPayDate(nextPayDate);
+    setPayMethod(nextPayMethod);
+    setCustomPayMethod(nextCustom);
+    setPayStatus(nextPayStatus);
+    setNotes(nextNotes);
+    setProrate(nextProrate);
+    setStartDate(nextStart);
+
+    baselineRef.current = JSON.stringify([
+      nextRental, nextElec, nextOther, nextPayDate, nextPayMethod,
+      nextCustom, nextPayStatus, nextNotes, nextProrate, nextStart,
+    ]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unitId, year, month]);
+
+  // Report dirtiness (current values vs the loaded baseline) to the parent.
+  useEffect(() => {
+    if (!onDirtyChange) return;
+    const current = JSON.stringify([
+      rental, elecUnits, otherCharges, payDate, payMethod,
+      customPayMethod, payStatus, notes, prorate, startDate,
+    ]);
+    onDirtyChange(current !== baselineRef.current);
+  }, [rental, elecUnits, otherCharges, payDate, payMethod, customPayMethod, payStatus, notes, prorate, startDate, onDirtyChange]);
 
   const elecUnitsNum = parseFloat(elecUnits) || 0;
   const freeUnits = unit?.electricity_free_units ?? 0;

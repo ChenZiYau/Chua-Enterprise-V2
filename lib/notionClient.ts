@@ -44,6 +44,42 @@ export async function notionUpdate(
   }
 }
 
+/** Upload a cover image for a property page and get back a fresh display URL.
+ *  The image is stored as the page cover in Notion (no DB schema change). */
+export async function uploadPropertyCover(pageId: string, file: Blob): Promise<string> {
+  const form = new FormData();
+  form.append("pageId", pageId);
+  form.append("file", file, (file as File).name || "cover.jpg");
+  const res = await fetch(`/api/notion/properties/cover`, { method: "POST", body: form });
+  const json = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (!res.ok || !json.url) throw new Error(json.error || `Cover upload failed (${res.status})`);
+  return json.url;
+}
+
+/** An ordered gallery item from the form: a pasted URL or an image Blob. */
+export type GalleryUpload = { url: string } | { file: Blob };
+
+/** Persist an ordered gallery (uploads + URLs) to a property page's "Gallery"
+ *  files property. Returns the resolved display URLs in order. */
+export async function uploadPropertyGallery(
+  pageId: string,
+  items: GalleryUpload[]
+): Promise<string[]> {
+  const form = new FormData();
+  form.append("pageId", pageId);
+  const spec = items.map((it, i) => {
+    if ("url" in it) return { kind: "url", url: it.url };
+    const key = `file_${i}`;
+    form.append(key, it.file, (it.file as File).name || `photo_${i}.jpg`);
+    return { kind: "file", key };
+  });
+  form.append("spec", JSON.stringify(spec));
+  const res = await fetch(`/api/notion/properties/gallery`, { method: "POST", body: form });
+  const json = (await res.json().catch(() => ({}))) as { urls?: string[]; error?: string };
+  if (!res.ok || !json.urls) throw new Error(json.error || `Gallery upload failed (${res.status})`);
+  return json.urls;
+}
+
 export async function notionDelete(entity: WritableEntity, id: string): Promise<void> {
   const res = await fetch(`/api/notion/${entity}?id=${encodeURIComponent(id)}`, {
     method: "DELETE",

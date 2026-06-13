@@ -9,7 +9,7 @@ import { RENTAL_MODEL_LABEL, STATUS_LABEL, type Property } from "@/types/rental"
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
 import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
 import { RoomCalendarDrawer } from "@/components/property/RoomCalendarDrawer";
-import { PropertyEditDrawer } from "@/components/property/PropertyEditDrawer";
+import { PropertyEditModal } from "@/components/property/PropertyEditModal";
 import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
 
 function formatMYR(value: number | undefined) {
@@ -39,7 +39,7 @@ export default function PropertyDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const { getProperty, updateProperty, softDeleteProperty, getUnitsForProperty, getPropertyYTD } = useRental();
+  const { getProperty, softDeleteProperty, getUnitsForProperty, getPropertyYTD } = useRental();
   const confirm = useConfirm();
 
   const property = getProperty(id);
@@ -261,21 +261,11 @@ export default function PropertyDetailPage({
         preselectedYear={drawer.open ? drawer.year : undefined}
       />
 
-      {/* Edit drawer - slides in from the right with the property form */}
-      <PropertyEditDrawer
+      {/* Edit modal - the same reusable form used to add a property */}
+      <PropertyEditModal
         open={editOpen}
         onClose={() => setEditOpen(false)}
         property={property}
-        onSave={async (values) => {
-          setActionError(null);
-          try {
-            await updateProperty(property.id, values);
-            setEditOpen(false);
-          } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Could not save property to Notion.");
-            throw err;
-          }
-        }}
       />
 
       {/* Expense drawer - itemized, multi-line expense entry */}

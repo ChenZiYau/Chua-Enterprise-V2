@@ -9,6 +9,8 @@ import {
 } from "@/types/rental";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
 import { QuickEntryModal } from "@/components/property/QuickEntryModal";
+import { PropertyEditModal } from "@/components/property/PropertyEditModal";
+import { IconEdit } from "@/components/admin/icons";
 
 function formatMYR(value: number | undefined) {
   if (value === undefined || value === null) return "-";
@@ -33,6 +35,7 @@ function statusChipClass(status: Property["status"]) {
 export function PropertyCard({ property }: { property: Property }) {
   const [imgSrc, setImgSrc] = useState(property.image_url || PROPERTY_FALLBACK_IMAGE);
   const [quickEntry, setQuickEntry] = useState<null | "revenue" | "expense">(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const isInactive = property.status === "inactive";
   const isWhole = property.rental_model === "whole_unit";
@@ -73,6 +76,22 @@ export function PropertyCard({ property }: { property: Property }) {
           className="w-full h-full object-cover"
           onError={() => setImgSrc(PROPERTY_FALLBACK_IMAGE)}
         />
+        {/* Edit in place — sits above the stretched overlay link (z-10). */}
+        <button
+          type="button"
+          onClick={() => setEditOpen(true)}
+          aria-label={`Edit ${property.name}`}
+          title="Edit property"
+          className="absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-lg flex items-center justify-center transition"
+          style={{
+            background: "rgba(15,17,22,0.55)",
+            color: "#fff",
+            backdropFilter: "blur(4px)",
+            border: "1px solid rgba(255,255,255,0.18)",
+          }}
+        >
+          <IconEdit className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="p-5 flex flex-col gap-4 flex-1">
@@ -155,6 +174,13 @@ export function PropertyCard({ property }: { property: Property }) {
         onClose={() => setQuickEntry(null)}
         propertyId={property.id}
         initialTab={quickEntry ?? "revenue"}
+      />
+
+      {/* Edit in place - same reusable form as Add */}
+      <PropertyEditModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        property={editOpen ? property : null}
       />
     </div>
   );

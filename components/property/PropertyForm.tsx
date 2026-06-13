@@ -8,6 +8,8 @@ import type {
   RentalModel,
 } from "@/types/rental";
 import { Select } from "@/components/ui/Select";
+import { CoverImageInput } from "@/components/property/CoverImageInput";
+import { GalleryInput, type GalleryOutItem } from "@/components/property/GalleryInput";
 
 export type PropertyFormValues = Omit<Property, "id" | "slug">;
 
@@ -78,9 +80,15 @@ export function PropertyForm({
   id,
   hideFooter,
   onDirtyChange,
+  onCoverFileChange,
+  onGalleryItemsChange,
+  mode = "create",
 }: {
   initial?: Partial<PropertyFormValues>;
   submitLabel: string;
+  /** 'create' lets the rental model be chosen; 'edit' locks it (changing it
+   *  would orphan room / whole-unit revenue data). */
+  mode?: "create" | "edit";
   onSubmit: (values: PropertyFormValues) => void | Promise<void>;
   onCancel?: () => void;
   /** Give the underlying <form> an id so external buttons can submit it via `form={id}`. */
@@ -89,6 +97,12 @@ export function PropertyForm({
   hideFooter?: boolean;
   /** Report whether the form has unsaved changes relative to its initial values. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Receive a cropped/uploaded cover image Blob to store on save (or null).
+   *  When omitted, the cover control offers paste-a-URL only behaviour. */
+  onCoverFileChange?: (file: File | null) => void;
+  /** Receive the ordered gallery list (URL items + image Blobs) to store on save.
+   *  When omitted, the gallery manager offers paste-a-URL only behaviour. */
+  onGalleryItemsChange?: (items: GalleryOutItem[]) => void;
 }) {
   const [values, setValues] = useState<PropertyFormValues>({
     ...defaultValues(),
@@ -134,52 +148,85 @@ export function PropertyForm({
 
   return (
     <form id={id} onSubmit={handleSubmit} className="@container flex flex-col gap-10 @lg:gap-12">
-      {/* Rental model - pick visually, this is the most important choice */}
-      <Group eyebrow="Rental model" title="How is this property rented?">
-        <div className="grid grid-cols-1 @md:grid-cols-2 gap-3">
-          {RENTAL_MODELS.map((m) => {
-            const active = values.rental_model === m.value;
-            return (
-              <button
+      {/* Rental model - pick visually, this is the most important choice.
+          Locked in edit mode: changing it would orphan room / whole-unit data. */}
+      <Group title="Rental model">
+        {mode === "edit" ? (
+          <div className="flex flex-col gap-2">
+            {RENTAL_MODELS.filter((m) => m.value === values.rental_model).map((m) => (
+              <div
                 key={m.value}
-                type="button"
-                onClick={() => {
-                  set("rental_model", m.value);
-                  if (m.value === "whole_unit") {
-                    set("total_units", 1);
-                    if ((values.rented_units || 0) > 1) set("rented_units", 1);
-                  }
-                }}
-                className="text-left p-4 rounded-xl transition"
+                aria-disabled
+                className="text-left p-4 rounded-xl flex items-start justify-between gap-3"
                 style={{
-                  borderWidth: 1,
-                  borderStyle: "solid",
-                  borderColor: active ? "var(--accent)" : "var(--border-soft)",
-                  background: active ? "var(--accent-soft)" : "var(--surface)",
-                  boxShadow: active ? "0 0 0 3px var(--accent-ring)" : "none",
+                  border: "1px solid var(--border-soft)",
+                  background: "var(--surface-muted)",
                 }}
               >
-                <p
-                  className="text-sm font-semibold"
-                  style={{ color: "var(--text-primary)" }}
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{m.label}</p>
+                  <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--text-muted)" }}>{m.hint}</p>
+                </div>
+                <span
+                  className="text-[10px] uppercase tracking-[0.12em] inline-flex items-center gap-1 shrink-0 px-2 py-1 rounded-md"
+                  style={{ color: "var(--text-faint)", border: "1px solid var(--border-soft)" }}
                 >
-                  {m.label}
-                </p>
-                <p
-                  className="text-xs mt-1 leading-relaxed"
-                  style={{ color: "var(--text-muted)" }}
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                  Locked
+                </span>
+              </div>
+            ))}
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
+              The rental model can&apos;t be changed after a property is created — it would orphan the
+              room or whole-unit revenue already recorded against it.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 @md:grid-cols-2 gap-3">
+            {RENTAL_MODELS.map((m) => {
+              const active = values.rental_model === m.value;
+              return (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => {
+                    set("rental_model", m.value);
+                    if (m.value === "whole_unit") {
+                      set("total_units", 1);
+                      if ((values.rented_units || 0) > 1) set("rented_units", 1);
+                    }
+                  }}
+                  className="text-left p-4 rounded-xl transition"
+                  style={{
+                    borderWidth: 1,
+                    borderStyle: "solid",
+                    borderColor: active ? "var(--accent)" : "var(--border-soft)",
+                    background: active ? "var(--accent-soft)" : "var(--surface)",
+                    boxShadow: active ? "0 0 0 3px var(--accent-ring)" : "none",
+                  }}
                 >
-                  {m.hint}
-                </p>
-              </button>
-            );
-          })}
-        </div>
+                  <p
+                    className="text-sm font-semibold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {m.label}
+                  </p>
+                  <p
+                    className="text-xs mt-1 leading-relaxed"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {m.hint}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </Group>
 
       {/* Identity */}
-      <Group eyebrow="Identity" title="Name and description">
-        <div className="grid grid-cols-1 @lg:grid-cols-2 gap-4 @lg:gap-5">
+      <Group title="Property details">
+        <div className="grid grid-cols-1 gap-4">
           <Field label="Property name" required>
             <input
               required
@@ -211,8 +258,8 @@ export function PropertyForm({
       </Group>
 
       {/* Location */}
-      <Group eyebrow="Location" title="Where is it?">
-        <div className="grid grid-cols-1 @lg:grid-cols-2 gap-4 @lg:gap-5">
+      <Group title="Location">
+        <div className="grid grid-cols-1 gap-4">
           <Field label="Address" full>
             <input
               className={inputClass}
@@ -245,34 +292,45 @@ export function PropertyForm({
               onChange={(e) => set("postcode", e.target.value)}
             />
           </Field>
-          <Field label="Cover image URL" full>
-            <input
-              className={inputClass}
-              style={inputStyle}
-              placeholder="https://... (shown as the hero photo)"
+          {/* Not a <label>: the control nests buttons + a file input, which a
+              wrapping label would hijack clicks for. */}
+          <div className="flex flex-col gap-1.5 @lg:col-span-2">
+            <span
+              className="text-[11px] font-medium uppercase tracking-[0.12em]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Cover image
+            </span>
+            <CoverImageInput
               value={values.image_url ?? ""}
-              onChange={(e) => set("image_url", e.target.value)}
+              onUrlChange={(url) => set("image_url", url)}
+              onFileChange={onCoverFileChange}
             />
-          </Field>
-          <Field label="Gallery photos — one URL per line" full>
-            <textarea
-              rows={3}
-              className={inputClass}
-              style={inputStyle}
-              placeholder={"https://photo-1.jpg\nhttps://photo-2.jpg"}
+          </div>
+          {/* Not a <label>: the manager nests buttons + a file input. */}
+          <div className="flex flex-col gap-1.5 @lg:col-span-2">
+            <span
+              className="text-[11px] font-medium uppercase tracking-[0.12em]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Gallery photos
+            </span>
+            <GalleryInput
               value={values.gallery_urls ?? ""}
-              onChange={(e) => set("gallery_urls", e.target.value)}
+              allowUpload={typeof onGalleryItemsChange === "function"}
+              onItemsChange={onGalleryItemsChange}
+              onUrlsChange={(s) => set("gallery_urls", s)}
             />
             <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
-              Extra photos shown on the public share page, after the cover image.
+              Extra photos shown on the public share page, after the cover image. Reorder with the arrows.
             </span>
-          </Field>
+          </div>
         </div>
       </Group>
 
       {/* Classification */}
-      <Group eyebrow="Classification" title="Type and status">
-        <div className="grid grid-cols-1 @lg:grid-cols-2 gap-4 @lg:gap-5">
+      <Group title="Classification">
+        <div className="grid grid-cols-1 gap-4">
           <Field label="Property type">
             <Select
               value={values.property_type}
@@ -292,15 +350,14 @@ export function PropertyForm({
 
       {/* Capacity */}
       <Group
-        eyebrow="Capacity"
-        title={isWhole ? "Whole-unit tenancy" : "Rooms and occupancy"}
+        title="Capacity"
         hint={
           isWhole
             ? "Whole-unit properties always have one rentable unit."
             : "Total rooms is the number of rentable rooms in this property."
         }
       >
-        <div className="grid grid-cols-1 @xs:grid-cols-2 @xl:grid-cols-4 gap-4 @lg:gap-5">
+        <div className="grid grid-cols-1 gap-4">
           <Field label={isWhole ? "Total units" : "Total rooms"}>
             <input
               type="number"
@@ -385,33 +442,25 @@ export function PropertyForm({
 }
 
 function Group({
-  eyebrow,
   title,
   hint,
   children,
 }: {
-  eyebrow: string;
   title: string;
   hint?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="grid grid-cols-1 @2xl:grid-cols-[200px_1fr] gap-x-10 gap-y-5">
+    <section className="flex flex-col gap-4">
       <div>
-        <p
-          className="text-[11px] uppercase tracking-[0.16em]"
-          style={{ color: "var(--text-faint)" }}
-        >
-          {eyebrow}
-        </p>
         <h3
-          className="text-sm font-semibold mt-1"
+          className="text-sm font-semibold"
           style={{ color: "var(--text-primary)" }}
         >
           {title}
         </h3>
         {hint ? (
-          <p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {hint}
           </p>
         ) : null}

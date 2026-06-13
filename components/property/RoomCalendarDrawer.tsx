@@ -70,7 +70,7 @@ export function RoomCalendarDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       <button
         type="button"
         aria-label="Close calendar"
@@ -83,12 +83,12 @@ export function RoomCalendarDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="room-calendar-title"
-        className="relative ml-auto h-full w-full max-w-lg flex flex-col"
+        className="relative w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl overflow-hidden"
         style={{
           background: "var(--surface)",
-          borderLeft: "1px solid var(--border-soft)",
-          boxShadow: "-8px 0 32px rgba(15,17,22,0.10)",
-          animation: "slideIn 220ms cubic-bezier(.2,.7,.2,1)",
+          border: "1px solid var(--border-soft)",
+          boxShadow: "0 24px 64px rgba(15,17,22,0.24)",
+          animation: "popIn 180ms cubic-bezier(.2,.7,.2,1)",
         }}
       >
         {/* Header */}
@@ -152,7 +152,7 @@ export function RoomCalendarDrawer({
         </div>
 
         {/* Month grid */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
           <div className="grid grid-cols-3 gap-3">
             {MONTHS.map((label, i) => {
               const state = cellState(i);
@@ -248,9 +248,9 @@ export function RoomCalendarDrawer({
       </aside>
 
       <style jsx>{`
-        @keyframes slideIn {
-          from { transform: translateX(16px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
+        @keyframes popIn {
+          from { transform: scale(.97); opacity: 0; }
+          to   { transform: scale(1);   opacity: 1; }
         }
         @keyframes fadeIn {
           from { opacity: 0; }

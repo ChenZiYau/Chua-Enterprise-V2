@@ -240,6 +240,12 @@ body {
   }
 }
 
+/* Centered pop-out entrance — shared by every modal/pop-out shell. */
+@keyframes emsPop {
+  from { transform: scale(.97); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 /* Breathing highlight — draws the eye to an interactive KPI without shouting. */
 @keyframes ui-breathe {
   0%, 100% { box-shadow: 0 0 0 0 var(--breathe-color, var(--accent-ring)); }

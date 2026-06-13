@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { DatePickerField } from "@/components/ui/DatePicker";
 import { Pagination, usePagination } from "@/components/ui/Pagination";
 import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
+import { EditModalShell } from "@/components/ui/EditModalShell";
 import {
   MONTHS,
   EXPENSE_CATEGORIES,
@@ -455,26 +456,29 @@ function EditExpenseDrawer({
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-md h-full overflow-y-auto flex flex-col"
-        style={{ background: "var(--surface)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between p-6 border-b sticky top-0 z-10" style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}>
-          <div>
-            <p className="text-xs uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Edit expense</p>
-            <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>{propertyName}</h3>
-            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-              {MONTHS[entry.month - 1]} {entry.year}
-            </p>
-          </div>
-          <button type="button" className="ui-btn" onClick={onClose}>Close</button>
-        </div>
+  const dirty =
+    category !== entry.category ||
+    customCategory !== (entry.custom_category ?? "") ||
+    amount !== String(entry.amount) ||
+    description !== (entry.description ?? "") ||
+    isRecurring !== !!entry.is_recurring ||
+    isIrregular !== !!entry.is_irregular;
 
-        <div className="p-6 flex flex-col gap-4 flex-1 text-sm">
+  return (
+    <EditModalShell
+      open
+      onClose={onClose}
+      placement="center"
+      widthClass="max-w-2xl"
+      eyebrow="Edit expense"
+      title={propertyName}
+      subtitle={`${MONTHS[entry.month - 1]} ${entry.year}`}
+      dirty={dirty}
+      saving={saving}
+      primaryFormId="expense-edit-form"
+      primaryLabel="Save Changes"
+    >
+      <form id="expense-edit-form" onSubmit={handleSubmit} className="flex flex-col gap-4 text-sm">
           <label className="flex flex-col gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-faint)" }}>Category</span>
             <Select
@@ -507,14 +511,8 @@ function EditExpenseDrawer({
               Irregular
             </label>
           </div>
-        </div>
-
-        <div className="p-4 border-t flex justify-end gap-2 sticky bottom-0" style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}>
-          {error && <p className="mr-auto self-center text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
-          <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="ui-btn ui-btn-primary" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</button>
-        </div>
+        {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
       </form>
-    </div>
+    </EditModalShell>
   );
 }

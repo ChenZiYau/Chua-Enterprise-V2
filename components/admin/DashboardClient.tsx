@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
 import { DatePickerField } from "@/components/ui/DatePicker";
 import { notionUpdate, isNotionId } from "@/lib/notionClient";
@@ -199,6 +200,7 @@ function Drawer({
   children,
   footer,
   wide,
+  dirty = false,
 }: {
   eyebrow?: string;
   title: string;
@@ -206,24 +208,42 @@ function Drawer({
   children: React.ReactNode;
   footer?: React.ReactNode;
   wide?: boolean;
+  /** When true, closing prompts a discard/keep-editing confirmation. */
+  dirty?: boolean;
 }) {
+  const confirm = useConfirm();
+
+  const requestClose = useCallback(async () => {
+    if (dirty) {
+      const { confirmed } = await confirm({
+        title: "Discard changes?",
+        message: "You have unsaved changes. Discard them and close?",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    onClose();
+  }, [dirty, confirm, onClose]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
       style={{ background: "rgba(0,0,0,0.5)" }}
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div
-        className={"w-full h-full overflow-y-auto flex flex-col " + (wide ? "max-w-3xl" : "max-w-xl")}
-        style={{ background: "var(--surface)" }}
+        className={"w-full max-h-[92vh] overflow-y-auto flex flex-col rounded-2xl " + (wide ? "max-w-4xl" : "max-w-2xl")}
+        style={{ background: "var(--surface)", border: "1px solid var(--border-soft)", boxShadow: "0 24px 64px rgba(15,17,22,0.24)", animation: "emsPop 180ms cubic-bezier(.2,.7,.2,1)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -240,7 +260,7 @@ function Drawer({
               {title}
             </h3>
           </div>
-          <button type="button" className="ui-btn shrink-0" onClick={onClose}>
+          <button type="button" className="ui-btn shrink-0" onClick={requestClose}>
             Close
           </button>
         </div>
@@ -678,6 +698,12 @@ function RentItemDrawer({
   const [error, setError] = useState<string | null>(null);
   const m = STATUS_META[entry.status];
 
+  // Unsaved edits = in edit mode with a changed field.
+  const initStatus: PaymentStatus =
+    entry.status === "paid" ? "paid" : entry.status === "overdue" ? "overdue" : "pending";
+  const dirty =
+    editing && (status !== initStatus || amount !== String(entry.amount) || payDate !== "");
+
   async function save() {
     setSaving(true);
     setError(null);
@@ -705,6 +731,7 @@ function RentItemDrawer({
       eyebrow={`Rent · ${entry.period}`}
       title={entry.tenant}
       onClose={onClose}
+      dirty={dirty}
       footer={
         editing ? (
           <>

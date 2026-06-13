@@ -3,10 +3,27 @@
 const NOTION_API = "https://api.notion.com/v1";
 const VERSION = "2022-06-28";
 
+type NotionFile =
+  | { type: "file"; file: { url: string; expiry_time?: string } }
+  | { type: "external"; external: { url: string } }
+  | { type: "file_upload"; file_upload: { id: string } };
+
 type NotionPage = {
   id: string;
   properties: Record<string, NotionProp>;
+  /** Page cover. For uploaded images this is a Notion-hosted file whose `url`
+   *  is a short-lived signed URL — always read fresh, never cache. */
+  cover?: NotionFile | null;
 };
+
+/** Resolve a displayable URL from a page cover, or "" when there is none. */
+function coverUrl(page: NotionPage): string {
+  const c = page.cover;
+  if (!c) return "";
+  if (c.type === "file") return c.file.url ?? "";
+  if (c.type === "external") return c.external.url ?? "";
+  return "";
+}
 
 type NotionProp =
   | { type: "title"; title: Array<{ plain_text: string }> }
@@ -17,6 +34,15 @@ type NotionProp =
   | { type: "url"; url: string | null }
   | { type: "email"; email: string | null }
   | { type: "phone_number"; phone_number: string | null }
+  | {
+      type: "files";
+      files: Array<{
+        name?: string;
+        type?: string;
+        file?: { url: string; expiry_time?: string };
+        external?: { url: string };
+      }>;
+    }
   | { type: "date"; date: { start: string | null; end: string | null } | null };
 
 function headers() {
@@ -88,6 +114,15 @@ function bool(p?: NotionProp): boolean {
 function dateStr(p?: NotionProp): string {
   if (!p || p.type !== "date" || !p.date) return "";
   return p.date.start ?? "";
+}
+/** Resolve every URL held by a Notion `files` property, in order. Uploaded
+ *  files carry a short-lived signed URL (read fresh each load); external items
+ *  carry the pasted URL. */
+function filesUrls(p?: NotionProp): string[] {
+  if (!p || p.type !== "files") return [];
+  return p.files
+    .map((f) => f.file?.url ?? f.external?.url ?? "")
+    .filter((u) => !!u);
 }
 
 // ---- typed rows ----
@@ -210,8 +245,15 @@ export async function getProperties(): Promise<PropertyRow[]> {
     rentalModel: txt(r.properties["Rental Model"]),
     propertyType: txt(r.properties["Property Type"]),
     status: txt(r.properties["Status"]),
-    imageUrl: txt(r.properties["Image URL"]),
-    galleryUrls: txt(r.properties["Gallery URLs"]),
+    // An uploaded cover lives as the page cover (fresh signed URL each load) and
+    // takes precedence; pasted-URL covers fall back to the "Image URL" property.
+    imageUrl: coverUrl(r) || txt(r.properties["Image URL"]),
+    // Gallery is the ordered "Gallery" files property (uploads + URL items, with
+    // fresh signed URLs); falls back to the legacy "Gallery URLs" text field.
+    galleryUrls: (() => {
+      const fromFiles = filesUrls(r.properties["Gallery"]);
+      return fromFiles.length ? fromFiles.join("\n") : txt(r.properties["Gallery URLs"]);
+    })(),
     description: txt(r.properties["Description"]),
     totalUnits: num(r.properties["Total Units"]),
     rentedUnits: num(r.properties["Rented Units"]),
@@ -584,4 +626,113 @@ export async function updateEntity(entity: Entity, id: string, fields: AnyFields
 
 export async function deleteEntity(id: string): Promise<void> {
   await archivePage(id);
+}
+
+// ------------------------- IMAGE UPLOAD (page cover) -------------------------
+// Uploaded cover images are stored via Notion's File Upload API and attached as
+// the property page's *cover* (a page attribute, not a DB property — so no
+// schema change). Notion returns a fresh, short-lived signed URL each time the
+// page is read; getProperties() reads it via coverUrl() on every load.
+
+/** Auth headers WITHOUT a JSON content-type, for the multipart upload step. */
+function authHeaders(): Record<string, string> {
+  const key = process.env.NOTION_API_KEY;
+  if (!key) throw new Error("NOTION_API_KEY is not set");
+  return { Authorization: `Bearer ${key}`, "Notion-Version": VERSION };
+}
+
+/** Step 1: create a single-part file upload, returns its id + upload URL. */
+async function createFileUpload(
+  filename: string,
+  contentType: string
+): Promise<{ id: string; uploadUrl: string }> {
+  const r = await fetch(`${NOTION_API}/file_uploads`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ mode: "single_part", filename, content_type: contentType }),
+  });
+  if (!r.ok) throw new Error(`Notion file upload create failed: ${r.status} ${await r.text()}`);
+  const data = (await r.json()) as { id: string; upload_url: string };
+  return { id: data.id, uploadUrl: data.upload_url };
+}
+
+/** Step 2: send the binary to the upload URL as multipart/form-data. */
+async function sendFileUpload(
+  uploadUrl: string,
+  bytes: ArrayBuffer | Uint8Array,
+  filename: string,
+  contentType: string
+): Promise<void> {
+  const form = new FormData();
+  form.append("file", new Blob([bytes as BlobPart], { type: contentType }), filename);
+  // No Content-Type header — fetch sets the multipart boundary itself.
+  const r = await fetch(uploadUrl, { method: "POST", headers: authHeaders(), body: form });
+  if (!r.ok) throw new Error(`Notion file upload send failed: ${r.status} ${await r.text()}`);
+}
+
+/** Step 3: attach the uploaded file as the page cover; returns the fresh URL. */
+async function attachPageCover(pageId: string, fileUploadId: string): Promise<string> {
+  const r = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ cover: { type: "file_upload", file_upload: { id: fileUploadId } } }),
+  });
+  if (!r.ok) throw new Error(`Notion set cover failed: ${r.status} ${await r.text()}`);
+  const data = (await r.json()) as NotionPage;
+  return coverUrl(data);
+}
+
+/**
+ * Upload an image and set it as `pageId`'s cover. Returns a display-ready
+ * (short-lived) URL for immediate use this session; subsequent dashboard loads
+ * re-read a fresh URL from the page cover.
+ */
+export async function uploadPageCover(
+  pageId: string,
+  bytes: ArrayBuffer | Uint8Array,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  const { id, uploadUrl } = await createFileUpload(filename, contentType);
+  await sendFileUpload(uploadUrl, bytes, filename, contentType);
+  return attachPageCover(pageId, id);
+}
+
+/** Upload a binary to Notion and return its file_upload id (not yet attached). */
+export async function uploadFile(
+  bytes: ArrayBuffer | Uint8Array,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  const { id, uploadUrl } = await createFileUpload(filename, contentType);
+  await sendFileUpload(uploadUrl, bytes, filename, contentType);
+  return id;
+}
+
+// An ordered gallery entry: either a pasted URL or an already-uploaded file.
+export type GalleryItemSpec =
+  | { type: "external"; url: string }
+  | { type: "file_upload"; id: string };
+
+/**
+ * Write the ordered gallery into the page's "Gallery" files property (uploads +
+ * URL items in one ordered list). Returns the resolved URLs in order.
+ */
+export async function setPageGallery(
+  pageId: string,
+  items: GalleryItemSpec[]
+): Promise<string[]> {
+  const files = items.map((it, i) =>
+    it.type === "external"
+      ? { type: "external", name: `Photo ${i + 1}`, external: { url: it.url } }
+      : { type: "file_upload", file_upload: { id: it.id } }
+  );
+  const r = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ properties: { Gallery: { files } } }),
+  });
+  if (!r.ok) throw new Error(`Notion set gallery failed: ${r.status} ${await r.text()}`);
+  const data = (await r.json()) as NotionPage;
+  return filesUrls(data.properties["Gallery"]);
 }

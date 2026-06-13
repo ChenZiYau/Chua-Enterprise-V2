@@ -3,14 +3,90 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { PropertyForm } from "@/components/property/PropertyForm";
+import { PropertyForm, type PropertyFormValues } from "@/components/property/PropertyForm";
+import type { GalleryOutItem } from "@/components/property/GalleryInput";
+import { SharePreviewModal } from "@/components/share/SharePreviewModal";
 import { useRental } from "@/context/RentalContext";
+import { uploadPropertyCover, uploadPropertyGallery } from "@/lib/notionClient";
+import type { Property, Unit } from "@/types/rental";
 
 export default function NewPropertyPage() {
   const router = useRouter();
-  const { createProperty } = useRental();
+  const { createProperty, setPropertyCoverLocal, setPropertyGalleryLocal } = useRental();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase 4: staged values shown in the confirmation preview before committing.
+  const [pending, setPending] = useState<PropertyFormValues | null>(null);
+  // A cropped/uploaded cover Blob (null when the cover is a pasted URL).
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  // Object URL for previewing the cropped cover (which isn't yet a remote URL).
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  // Ordered gallery (URL items + image Blobs), captured live from the manager.
+  const [galleryItems, setGalleryItems] = useState<GalleryOutItem[]>([]);
+
+  function handleCoverFile(file: File | null) {
+    setCoverFile(file);
+    setCoverPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  }
+
+  // Build a Property + representative units to render the real public preview.
+  const previewProperty: Property | null = pending
+    ? {
+        ...pending,
+        id: "preview",
+        slug: "preview",
+        image_url: coverPreview || pending.image_url || null,
+        gallery_urls: galleryItems.length
+          ? galleryItems.map((it) => it.previewUrl).join("\n")
+          : pending.gallery_urls || null,
+      }
+    : null;
+
+  const previewUnits: Unit[] =
+    pending && pending.rental_model === "room_rental"
+      ? Array.from({ length: Math.max(1, pending.total_units || 1) }, (_, i) => ({
+          id: `preview-${i}`,
+          property_id: "preview",
+          name: `Room ${i + 1}`,
+          label: `R${i + 1}`,
+          sort_order: i + 1,
+          is_rented: i < (pending.rented_units || 0),
+          electricity_free_units: 0,
+        }))
+      : [];
+
+  async function handleConfirm() {
+    if (!pending) return;
+    setSaving(true);
+    setError(null);
+    try {
+      // For an uploaded cover, the URL field is empty — the cover is attached to
+      // the page after creation, so we don't persist an expiring URL as text.
+      const created = await createProperty(pending);
+      if (coverFile) {
+        const freshUrl = await uploadPropertyCover(created.id, coverFile);
+        setPropertyCoverLocal(created.id, freshUrl);
+      }
+      // Only write the "Gallery" files property when there are uploads to attach;
+      // URL-only galleries already persist as text via createProperty.
+      if (galleryItems.some((it) => !!it.file)) {
+        const urls = await uploadPropertyGallery(
+          created.id,
+          galleryItems.map((it) => (it.file ? { file: it.file } : { url: it.url! }))
+        );
+        setPropertyGalleryLocal(created.id, urls.join("\n"));
+      }
+      if (coverPreview) URL.revokeObjectURL(coverPreview);
+      router.push(`/admin/properties/${created.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save property to Notion.");
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-7">
@@ -43,28 +119,41 @@ export default function NewPropertyPage() {
       </div>
 
       <div className="ui-card p-6 lg:p-8">
-        {error && (
+        {error && !pending && (
           <div className="mb-4 rounded-lg px-4 py-3 text-sm" style={{ background: "rgba(211,84,84,0.08)", border: "1px solid var(--danger)", color: "var(--danger)" }}>
             {error}
           </div>
         )}
         <PropertyForm
-          submitLabel={saving ? "Saving..." : "Save Property"}
+          submitLabel="Save Property"
           onCancel={() => router.push("/admin/properties")}
-          onSubmit={async (values) => {
-            setSaving(true);
+          onCoverFileChange={handleCoverFile}
+          onGalleryItemsChange={setGalleryItems}
+          onSubmit={(values) => {
+            // Don't commit yet — stage the values and open the confirmation preview.
             setError(null);
-            try {
-              const created = await createProperty(values);
-              router.push(`/admin/properties/${created.id}`);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Could not save property to Notion.");
-            } finally {
-              setSaving(false);
-            }
+            setPending(values);
           }}
         />
       </div>
+
+      {/* Phase 4: confirmation preview — renders exactly as the public/property view. */}
+      {previewProperty && (
+        <SharePreviewModal
+          open={pending !== null}
+          onClose={() => {
+            if (saving) return;
+            setPending(null);
+          }}
+          property={previewProperty}
+          units={previewUnits}
+          eyebrow="Confirm new listing"
+          confirmLabel="Confirm & save"
+          onConfirm={handleConfirm}
+          confirming={saving}
+          confirmError={error}
+        />
+      )}
     </div>
   );
 }

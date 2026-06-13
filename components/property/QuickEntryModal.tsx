@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { RevenueEntryForm } from "@/components/property/RevenueEntryForm";
 import { ExpenseEntryForm } from "@/components/property/ExpenseEntryForm";
 import { Select } from "@/components/ui/Select";
@@ -31,8 +32,11 @@ export function QuickEntryModal({
   initialTab?: Tab;
 }) {
   const { getUnitsForProperty, getProperty } = useRental();
+  const confirm = useConfirm();
 
   const [tab, setTab] = useState<Tab>(initialTab);
+  // Whether the active form has unsaved input (drives the discard guard).
+  const [dirty, setDirty] = useState(false);
   const [unitId, setUnitId] = useState("");
   // The entry date drives the billing period (year + month) for the form.
   const [entryDate, setEntryDate] = useState(todayIso());
@@ -57,9 +61,25 @@ export function QuickEntryModal({
     setTab(initialTab);
     setEntryDate(todayIso());
     setDateOpen(true);
+    setDirty(false);
     setUnitId(getUnitsForProperty(propertyId)[0]?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, propertyId, initialTab]);
+
+  // Guarded close: confirm before discarding unsaved entry input.
+  const requestClose = useCallback(async () => {
+    if (dirty) {
+      const { confirmed } = await confirm({
+        title: "Discard changes?",
+        message: "You have unsaved entry details. Discard them and close?",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    onClose();
+  }, [dirty, confirm, onClose]);
 
   // Keep the selected room valid for this property (default = first room).
   useEffect(() => {
@@ -73,14 +93,14 @@ export function QuickEntryModal({
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     }
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+  }, [open, requestClose]);
 
   if (!open) return null;
 
@@ -152,7 +172,7 @@ export function QuickEntryModal({
       <button
         type="button"
         aria-label="Close"
-        onClick={onClose}
+        onClick={requestClose}
         className="absolute inset-0"
         style={{ background: "rgba(15,17,22,0.40)", animation: "qeFadeIn 140ms ease" }}
       />
@@ -185,7 +205,7 @@ export function QuickEntryModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="Close"
             className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition hover:bg-[var(--surface-muted)]"
             style={{ color: "var(--text-muted)", border: "1px solid var(--border-soft)", background: "var(--surface)" }}
@@ -207,7 +227,7 @@ export function QuickEntryModal({
                   <button
                     key={t}
                     type="button"
-                    onClick={() => setTab(t)}
+                    onClick={() => { setTab(t); setDirty(false); }}
                     aria-pressed={active}
                     className="py-2.5 rounded-lg text-sm font-semibold capitalize transition"
                     style={{
@@ -237,6 +257,7 @@ export function QuickEntryModal({
                 year={year}
                 month={monthIdx + 1}
                 onSaved={handleSaved}
+                onDirtyChange={setDirty}
                 datePanel={datePanel}
                 contextSlot={showRoomSelector ? roomSelector : null}
               />
@@ -247,6 +268,7 @@ export function QuickEntryModal({
                 year={year}
                 month={monthIdx + 1}
                 onSaved={handleSaved}
+                onDirtyChange={setDirty}
                 datePanel={datePanel}
               />
             )}

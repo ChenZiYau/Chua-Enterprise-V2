@@ -56,6 +56,14 @@ interface RentalContextValue {
   createProperty: (input: PropertyInput) => Promise<Property>;
   updateProperty: (id: string, patch: Partial<Property>) => Promise<Property | undefined>;
   softDeleteProperty: (id: string) => Promise<void>;
+  /** Update a property's cover URL in local state only (no Notion write). Used
+   *  after an uploaded cover so the fresh signed URL shows immediately without
+   *  persisting an expiring URL — the page cover is re-read fresh on reload. */
+  setPropertyCoverLocal: (id: string, url: string) => void;
+  /** Update a property's gallery URLs in local state only (no Notion write).
+   *  Used after uploaded gallery images so they show immediately; the "Gallery"
+   *  files property is re-read fresh on reload. */
+  setPropertyGalleryLocal: (id: string, galleryUrls: string) => void;
 
   // -- Units --------------------------------------------------------
   units: Unit[];
@@ -455,6 +463,14 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     return updated;
   }, []);
 
+  const setPropertyCoverLocal = useCallback((id: string, url: string) => {
+    setProperties((prev) => prev.map((p) => (p.id === id ? { ...p, image_url: url } : p)));
+  }, []);
+
+  const setPropertyGalleryLocal = useCallback((id: string, galleryUrls: string) => {
+    setProperties((prev) => prev.map((p) => (p.id === id ? { ...p, gallery_urls: galleryUrls } : p)));
+  }, []);
+
   const softDeleteProperty = useCallback(async (id: string) => {
     const unitIds = unitsRef.current.filter((unit) => unit.property_id === id).map((unit) => unit.id);
     if (isNotionId(id)) {
@@ -713,6 +729,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       createProperty,
       updateProperty,
       softDeleteProperty,
+      setPropertyCoverLocal,
+      setPropertyGalleryLocal,
 
       units,
       getUnitsForProperty,
@@ -759,6 +777,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     createProperty,
     updateProperty,
     softDeleteProperty,
+    setPropertyCoverLocal,
+    setPropertyGalleryLocal,
     updateUnit,
     addRevenueEntry,
     updateRevenueEntry,

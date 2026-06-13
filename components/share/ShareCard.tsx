@@ -9,9 +9,7 @@ import {
 } from "@/types/rental";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
 import { buildShareUrl, roomSlug } from "@/lib/share";
-import { useRental } from "@/context/RentalContext";
-import { PropertyEditDrawer } from "@/components/property/PropertyEditDrawer";
-import type { PropertyFormValues } from "@/components/property/PropertyForm";
+import { PropertyEditModal } from "@/components/property/PropertyEditModal";
 import { SharePreviewModal } from "@/components/share/SharePreviewModal";
 import {
   IconLink,
@@ -68,7 +66,6 @@ export function ShareCard({
   property: Property;
   units: Unit[];
 }) {
-  const { updateProperty } = useRental();
   const [imgSrc, setImgSrc] = useState(property.image_url || PROPERTY_FALLBACK_IMAGE);
   const [origin, setOrigin] = useState("");
   // Which action most recently copied — drives the transient "Copied ✓" state.
@@ -125,11 +122,6 @@ export function ShareCard({
   async function handleCopy(url: string, key: string) {
     const ok = await copyText(url || propertyUrl);
     if (ok) flagCopied(key);
-  }
-
-  async function handleSaveEdit(values: PropertyFormValues) {
-    await updateProperty(property.id, values);
-    setEditOpen(false);
   }
 
   return (
@@ -290,11 +282,10 @@ export function ShareCard({
         property={property}
         units={units}
       />
-      <PropertyEditDrawer
+      <PropertyEditModal
         open={editOpen}
         onClose={() => setEditOpen(false)}
         property={editOpen ? property : null}
-        onSave={handleSaveEdit}
       />
     </div>
   );

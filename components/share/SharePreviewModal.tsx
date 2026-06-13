@@ -20,11 +20,25 @@ export function SharePreviewModal({
   onClose,
   property,
   units,
+  eyebrow,
+  confirmLabel,
+  onConfirm,
+  confirming,
+  confirmError,
+  backLabel = "Back / edit",
 }: {
   open: boolean;
   onClose: () => void;
   property: Property;
   units: Unit[];
+  /** Toolbar eyebrow label (defaults to "Preview"). */
+  eyebrow?: string;
+  /** When set, an action bar with a primary confirm button is shown. */
+  confirmLabel?: string;
+  onConfirm?: () => void | Promise<void>;
+  confirming?: boolean;
+  confirmError?: string | null;
+  backLabel?: string;
 }) {
   const [roomId, setRoomId] = useState<string | null>(null);
 
@@ -103,7 +117,7 @@ export function SharePreviewModal({
         <div className="flex items-center justify-between gap-3 w-full max-w-[390px]">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "rgba(255,255,255,0.6)" }}>
-              Preview
+              {eyebrow ?? "Preview"}
             </p>
             <p className="text-sm font-semibold truncate" style={{ color: "#fff" }}>
               {activeRoom ? `${property.name} · ${activeRoom.name}` : property.name}
@@ -146,6 +160,36 @@ export function SharePreviewModal({
             />
           </div>
         </div>
+
+        {/* Confirmation action bar (Add-property flow) */}
+        {onConfirm && (
+          <div className="flex flex-col items-stretch gap-2 w-full max-w-[390px]">
+            {confirmError && (
+              <p className="text-xs text-center" style={{ color: "#ff9b9b" }}>
+                {confirmError}
+              </p>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={confirming}
+                className="ui-btn"
+                style={{ color: "#fff", borderColor: "rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.06)" }}
+              >
+                {backLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => onConfirm()}
+                disabled={confirming}
+                className="ui-btn ui-btn-primary"
+              >
+                {confirming ? "Saving…" : confirmLabel ?? "Confirm & save"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <style jsx global>{`

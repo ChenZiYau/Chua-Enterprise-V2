@@ -924,7 +924,7 @@ function MaintenanceDialog({
     onClose();
   }
   const estimatedDue = isReadOnly && selectedCase ? selectedCase.dueDate : addDays(form.startDate, Number(form.durationDays) || 0);
-  const widthClass = view === "expanded" ? "max-w-3xl" : "max-w-xl";
+  const widthClass = view === "expanded" ? "max-w-5xl" : "max-w-3xl";
 
   const unitOptions = form.propertyId
     ? units.filter((unit) => unit.property_id === form.propertyId).sort((a, b) => a.sort_order - b.sort_order)
@@ -1014,7 +1014,7 @@ function MaintenanceDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       <button
         type="button"
         aria-label="Close maintenance drawer"
@@ -1025,11 +1025,12 @@ function MaintenanceDialog({
       <aside
         role="dialog"
         aria-modal="true"
-        className={`relative ml-auto h-full w-full ${widthClass} flex flex-col`}
+        className={`relative w-full ${widthClass} max-h-[92vh] flex flex-col rounded-2xl overflow-hidden`}
         style={{
           background: "var(--surface)",
-          borderLeft: "1px solid var(--border-soft)",
-          boxShadow: "-8px 0 32px rgba(15,17,22,0.10)",
+          border: "1px solid var(--border-soft)",
+          boxShadow: "0 24px 64px rgba(15,17,22,0.24)",
+          animation: "emsPop 180ms cubic-bezier(.2,.7,.2,1)",
         }}
       >
         <div className="px-6 py-5 border-b flex items-start justify-between gap-4" style={{ borderColor: "var(--border-soft)" }}>
@@ -1055,7 +1056,7 @@ function MaintenanceDialog({
         </div>
 
         {isReadOnly && selectedCase ? (
-          <div className="p-6 flex-1 overflow-y-auto flex flex-col gap-5">
+          <div className="p-6 flex-1 min-h-0 overflow-y-auto flex flex-col gap-5">
             <div className="flex flex-wrap gap-2">
               <span className="ui-chip">{selectedCase.category}</span>
               <span className={"ui-chip " + priorityChipClass(selectedCase.priority)}>
@@ -1108,7 +1109,7 @@ function MaintenanceDialog({
           </div>
         ) : (
           <>
-          <div className="p-6 flex-1 overflow-y-auto flex flex-col gap-5">
+          <div className="p-6 flex-1 min-h-0 overflow-y-auto flex flex-col gap-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Property">
                 <CustomDropdown
