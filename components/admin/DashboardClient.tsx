@@ -7,6 +7,7 @@ import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
 import { DatePickerField } from "@/components/ui/DatePicker";
+import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
 import { notionUpdate, isNotionId } from "@/lib/notionClient";
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, type PaymentMethod, type PaymentStatus, type RevenueEntry } from "@/types/rental";
 import type {
@@ -1402,13 +1403,29 @@ function PropertySection({
               key={p.id || p.name}
               type="button"
               onClick={() => onOpen(p, view)}
-              className={"text-left rounded-xl p-4 flex flex-col gap-3 transition cursor-pointer " + STATUS_GLOW[p.status]}
+              className={"text-left rounded-xl flex flex-col overflow-hidden transition cursor-pointer " + STATUS_GLOW[p.status]}
               style={{
                 background: "var(--surface-muted)",
                 border: "1px solid var(--border-soft)",
                 borderLeft: `3px solid ${statusDot(p.status)}`,
               }}
             >
+              {/* Picture-forward header — the overview leads with the cover image. */}
+              <div className="relative w-full aspect-[16/9] overflow-hidden" style={{ background: "var(--surface-subtle)" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.imageUrl || PROPERTY_FALLBACK_IMAGE}
+                  alt={p.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    if (e.currentTarget.src !== PROPERTY_FALLBACK_IMAGE) {
+                      e.currentTarget.src = PROPERTY_FALLBACK_IMAGE;
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="p-4 flex flex-col gap-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
@@ -1465,6 +1482,7 @@ function PropertySection({
                   </p>
                 </>
               )}
+              </div>
             </button>
           ))}
         </div>

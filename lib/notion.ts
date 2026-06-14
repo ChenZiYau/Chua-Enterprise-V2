@@ -142,6 +142,9 @@ export type PropertyRow = {
   /** Optional newline/comma-separated extra photo URLs. Reads a "Gallery URLs"
    *  rich-text property if present; empty until that schema field is added. */
   galleryUrls: string;
+  /** Owner-pasted external share link. Reads a "Share URL" property if present;
+   *  empty until that schema field is added. */
+  shareUrl: string;
   description: string;
   totalUnits: number;
   rentedUnits: number;
@@ -162,6 +165,9 @@ export type UnitRow = {
   /** Optional per-room photo URLs (newline/comma separated). Reads a "Gallery
    *  URLs" rich-text property if present; empty until that field is added. */
   galleryUrls: string;
+  /** Owner-pasted external share link for this room. Reads a "Share URL"
+   *  property if present; empty until that schema field is added. */
+  shareUrl: string;
 };
 
 export type TenantRow = {
@@ -254,6 +260,7 @@ export async function getProperties(): Promise<PropertyRow[]> {
       const fromFiles = filesUrls(r.properties["Gallery"]);
       return fromFiles.length ? fromFiles.join("\n") : txt(r.properties["Gallery URLs"]);
     })(),
+    shareUrl: txt(r.properties["Share URL"]),
     description: txt(r.properties["Description"]),
     totalUnits: num(r.properties["Total Units"]),
     rentedUnits: num(r.properties["Rented Units"]),
@@ -275,6 +282,7 @@ export async function getUnits(): Promise<UnitRow[]> {
     rentalRate: num(r.properties["Rental Rate"]),
     electricityFreeUnits: num(r.properties["Electricity Free Units"]),
     galleryUrls: txt(r.properties["Gallery URLs"]),
+    shareUrl: txt(r.properties["Share URL"]),
   }));
 }
 
@@ -542,6 +550,7 @@ function buildPropertyProps(f: AnyFields): Record<string, PropValue> {
   if (has(f, "status")) p["Status"] = pSelect(f.status as string);
   if (has(f, "imageUrl")) p["Image URL"] = pUrl(f.imageUrl as string);
   if (has(f, "galleryUrls")) p["Gallery URLs"] = pText(f.galleryUrls as string);
+  if (has(f, "shareUrl")) p["Share URL"] = pUrl(f.shareUrl as string);
   if (has(f, "description")) p["Description"] = pText(f.description as string);
   if (has(f, "totalUnits")) p["Total Units"] = pNum(f.totalUnits as number);
   if (has(f, "rentedUnits")) p["Rented Units"] = pNum(f.rentedUnits as number);
@@ -561,6 +570,7 @@ function buildUnitProps(f: AnyFields): Record<string, PropValue> {
   if (has(f, "rentalRate")) p["Rental Rate"] = pNum(f.rentalRate as number);
   if (has(f, "electricityFreeUnits")) p["Electricity Free Units"] = pNum(f.electricityFreeUnits as number);
   if (has(f, "galleryUrls")) p["Gallery URLs"] = pText(f.galleryUrls as string);
+  if (has(f, "shareUrl")) p["Share URL"] = pUrl(f.shareUrl as string);
   return p;
 }
 

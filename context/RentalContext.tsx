@@ -191,14 +191,14 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       id: string; name: string; slug: string; shortName: string;
       address: string; city: string; state: string; postcode: string;
       rentalModel: string; propertyType: string; status: string;
-      imageUrl: string; galleryUrls: string; description: string;
+      imageUrl: string; galleryUrls: string; shareUrl: string; description: string;
       totalUnits: number; rentedUnits: number;
       ytdRevenue: number; ytdExpenses: number;
     };
     type NPUnit = {
       id: string; name: string; property: string; label: string;
       sortOrder: number; isRented: boolean; tenantName: string;
-      rentalRate: number; electricityFreeUnits: number; galleryUrls: string;
+      rentalRate: number; electricityFreeUnits: number; galleryUrls: string; shareUrl: string;
     };
     type NPRevenue = {
       id: string; name: string; property: string; unit: string;
@@ -261,6 +261,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           status: (p.status as PropertyStatus) || "active",
           image_url: p.imageUrl || null,
           gallery_urls: p.galleryUrls || null,
+          share_url: p.shareUrl || null,
           description: p.description || null,
           total_units: p.totalUnits || 0,
           rented_units: p.rentedUnits || 0,
@@ -282,6 +283,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           rental_rate: u.rentalRate || 0,
           electricity_free_units: u.electricityFreeUnits || 0,
           gallery_urls: u.galleryUrls || null,
+          share_url: u.shareUrl || null,
         }));
         const unitIdByKey = new Map<string, string>();
         for (const u of uData) {

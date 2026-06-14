@@ -26,6 +26,7 @@ export function propertyCreateFields(p: Property) {
     status: p.status,
     imageUrl: p.image_url ?? null,
     galleryUrls: p.gallery_urls ?? null,
+    shareUrl: p.share_url ?? null,
     description: p.description ?? null,
     totalUnits: p.total_units,
     rentedUnits: p.rented_units,
@@ -48,6 +49,7 @@ export function propertyPatchFields(patch: Partial<Property>) {
   if ("status" in patch) f.status = patch.status;
   if ("image_url" in patch) f.imageUrl = patch.image_url ?? null;
   if ("gallery_urls" in patch) f.galleryUrls = patch.gallery_urls ?? null;
+  if ("share_url" in patch) f.shareUrl = patch.share_url ?? null;
   if ("description" in patch) f.description = patch.description ?? null;
   if ("total_units" in patch) f.totalUnits = patch.total_units;
   if ("rented_units" in patch) f.rentedUnits = patch.rented_units;
@@ -67,6 +69,7 @@ export function unitCreateFields(u: Unit, names: Names) {
     rentalRate: u.rental_rate ?? null,
     electricityFreeUnits: u.electricity_free_units,
     galleryUrls: u.gallery_urls ?? null,
+    shareUrl: u.share_url ?? null,
   };
 }
 
@@ -81,6 +84,7 @@ export function unitPatchFields(patch: Partial<Unit>, names: Names) {
   if ("rental_rate" in patch) f.rentalRate = patch.rental_rate ?? null;
   if ("electricity_free_units" in patch) f.electricityFreeUnits = patch.electricity_free_units;
   if ("gallery_urls" in patch) f.galleryUrls = patch.gallery_urls ?? null;
+  if ("share_url" in patch) f.shareUrl = patch.share_url ?? null;
   return f;
 }
 

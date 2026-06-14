@@ -19,17 +19,20 @@ import {
 
 const CUR_YEAR = new Date().getFullYear();
 
-function monthKey(y: number, m: number) {
-  return y * 100 + m;
-}
-function parseMonthInput(s: string): { y: number; m: number } | null {
+/** Parse a "YYYY-MM-DD" input into a comparable YYYYMMDD number, or null if empty/invalid. */
+function parseDayInput(s: string): number | null {
   if (!s) return null;
-  const [y, m] = s.split("-").map(Number);
-  if (!y || !m) return null;
-  return { y, m };
+  const [y, m, d] = s.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return y * 10000 + m * 100 + d;
 }
-function toMonthInput(y: number, m: number) {
-  return `${y}-${String(m).padStart(2, "0")}`;
+/** Day key for an entry: its expense_date when present, else the 1st of its year/month. */
+function entryDayKey(year: number, month: number, isoDate?: string | null): number {
+  if (isoDate) {
+    const k = parseDayInput(isoDate);
+    if (k != null) return k;
+  }
+  return year * 10000 + month * 100 + 1;
 }
 
 function fmt(value: number) {
@@ -41,28 +44,45 @@ function fmt(value: number) {
 }
 
 export default function ExpensesPage() {
-  const { expenseEntries, visibleProperties, deleteExpenseEntry, updateExpenseEntry, getUnit } = useRental();
+  const { expenseEntries, visibleProperties, deleteExpenseEntry, updateExpenseEntry, getUnit, getUnitsForProperty } = useRental();
   const confirm = useConfirm();
 
-  const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
-  const [toMonth, setToMonth] = useState(toMonthInput(CUR_YEAR, 12));
+  const [fromDate, setFromDate] = useState(`${CUR_YEAR}-01-01`);
+  const [toDate, setToDate] = useState(`${CUR_YEAR}-12-31`);
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
+  // Room filter: "all" rooms, "__none__" = whole-property expenses, or a unit id.
+  const [filterUnit, setFilterUnit] = useState("all");
   const [filterCategory, setFilterCategory] = useState<ExpenseCategory | "all">("all");
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
 
+  // Rooms for the selected property — only meaningful for room-based properties.
+  const selectedProp = filterProp === "all" ? undefined : visibleProperties.find((p) => p.id === filterProp);
+  const showRoomFilter = !!selectedProp && selectedProp.rental_model === "room_rental";
+  const roomOptions = showRoomFilter
+    ? getUnitsForProperty(filterProp).slice().sort((a, b) => a.sort_order - b.sort_order)
+    : [];
+
   const filtered = useMemo(() => {
-    const from = parseMonthInput(fromMonth);
-    const to = parseMonthInput(toMonth);
+    // Day-level bounds (YYYYMMDD). Defensive swap if From is after To.
+    let lo = parseDayInput(fromDate);
+    let hi = parseDayInput(toDate);
+    if (lo != null && hi != null && lo > hi) [lo, hi] = [hi, lo];
     const q = search.trim().toLowerCase();
     return expenseEntries
       .filter((e) => {
-        if (from && monthKey(e.year, e.month) < monthKey(from.y, from.m)) return false;
-        if (to && monthKey(e.year, e.month) > monthKey(to.y, to.m)) return false;
+        const k = entryDayKey(e.year, e.month, e.expense_date);
+        if (lo != null && k < lo) return false;
+        if (hi != null && k > hi) return false; // To boundary inclusive
         return true;
       })
       .filter((e) => filterProp === "all" || e.property_id === filterProp)
+      .filter((e) => {
+        if (filterUnit === "all") return true;
+        if (filterUnit === "__none__") return !e.unit_id; // whole-property expenses
+        return e.unit_id === filterUnit;
+      })
       .filter((e) => filterCategory === "all" || e.category === filterCategory)
       .filter((e) => {
         if (!q) return true;
@@ -85,17 +105,18 @@ export default function ExpensesPage() {
       });
   }, [
     expenseEntries,
-    fromMonth,
-    toMonth,
+    fromDate,
+    toDate,
     search,
     filterProp,
+    filterUnit,
     filterCategory,
     visibleProperties,
   ]);
 
   const totalExpenses = filtered.reduce((s, e) => s + e.amount, 0);
 
-  const resetKey = `${fromMonth}|${toMonth}|${search}|${filterProp}|${filterCategory}`;
+  const resetKey = `${fromDate}|${toDate}|${search}|${filterProp}|${filterUnit}|${filterCategory}`;
   const { page, setPage, totalPages, total, pageSize, pageItems } = usePagination(filtered, 10, resetKey);
 
   async function handleDelete(id: string, label: string) {
@@ -132,21 +153,21 @@ export default function ExpensesPage() {
       {/* Filters */}
       <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
         <DatePickerField
-          granularity="month"
+          granularity="day"
           className="w-[150px]"
-          value={fromMonth}
-          onChange={setFromMonth}
-          placeholder="From month"
-          ariaLabel="From month"
+          value={fromDate}
+          onChange={setFromDate}
+          placeholder="From date"
+          ariaLabel="From date"
         />
         <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
         <DatePickerField
-          granularity="month"
+          granularity="day"
           className="w-[150px]"
-          value={toMonth}
-          onChange={setToMonth}
-          placeholder="To month"
-          ariaLabel="To month"
+          value={toDate}
+          onChange={setToDate}
+          placeholder="To date"
+          ariaLabel="To date"
         />
 
         <input
@@ -161,12 +182,30 @@ export default function ExpensesPage() {
           className="w-auto min-w-[160px]"
           ariaLabel="Filter by property"
           value={filterProp}
-          onChange={setFilterProp}
+          onChange={(v) => {
+            setFilterProp(v);
+            setFilterUnit("all");
+          }}
           options={[
             { value: "all", label: "All Properties" },
             ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
           ]}
         />
+
+        {/* Room filter — only for room-based properties; lists every room. */}
+        {showRoomFilter && (
+          <Select
+            className="w-auto min-w-[150px]"
+            ariaLabel="Filter by room"
+            value={filterUnit}
+            onChange={setFilterUnit}
+            options={[
+              { value: "all", label: "All Rooms" },
+              { value: "__none__", label: "Whole property" },
+              ...roomOptions.map((u) => ({ value: u.id, label: u.name })),
+            ]}
+          />
+        )}
 
         <Select
           className="w-auto min-w-[180px]"

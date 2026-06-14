@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth";
 import { useMobileNav } from "./MobileNavContext";
 import {
+  IconQuickEntry,
   IconDashboard,
   IconProperties,
   IconRevenue,
@@ -31,6 +32,12 @@ type NavSection = {
 };
 
 const sections: NavSection[] = [
+  {
+    title: "Quick Actions",
+    items: [
+      { label: "Quick Entry", href: "/admin/entry", icon: IconQuickEntry },
+    ],
+  },
   {
     title: "Management",
     items: [

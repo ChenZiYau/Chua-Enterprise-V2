@@ -95,6 +95,9 @@ export interface Property {
   image_url?: string | null;
   /** Extra photo URLs for the public share gallery, newline/comma separated. */
   gallery_urls?: string | null;
+  /** Owner-pasted external link (e.g. a Dropbox/Drive photo folder). When set,
+   *  the Share page copies this instead of the app-generated /share/<slug> URL. */
+  share_url?: string | null;
   description?: string | null;
   total_units: number;
   rented_units: number;
@@ -116,6 +119,9 @@ export interface Unit {
   electricity_free_units: number;
   /** Per-room photo URLs for the public share gallery, newline/comma separated. */
   gallery_urls?: string | null;
+  /** Owner-pasted external link for this room (e.g. a Dropbox/Drive folder).
+   *  When set, the Share Room menu copies this for the room. */
+  share_url?: string | null;
 }
 
 export interface RevenueEntry {

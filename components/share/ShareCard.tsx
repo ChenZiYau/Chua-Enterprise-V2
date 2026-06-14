@@ -9,13 +9,12 @@ import {
 } from "@/types/rental";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
 import { buildShareUrl, roomSlug } from "@/lib/share";
-import { PropertyEditModal } from "@/components/property/PropertyEditModal";
-import { SharePreviewModal } from "@/components/share/SharePreviewModal";
+import { ShareLinkEditModal } from "@/components/share/ShareLinkEditModal";
+import { ShareRoomLinkEditModal } from "@/components/share/ShareRoomLinkEditModal";
 import {
   IconLink,
   IconCopy,
   IconCheck,
-  IconEye,
   IconEdit,
 } from "@/components/admin/icons";
 
@@ -71,8 +70,8 @@ export function ShareCard({
   // Which action most recently copied — drives the transient "Copied ✓" state.
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<Unit | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -110,7 +109,9 @@ export function ShareCard({
   }, [menuOpen]);
 
   const isWhole = property.rental_model === "whole_unit";
-  const propertyUrl = buildShareUrl(property, null, origin);
+  // Prefer the owner-pasted external link (e.g. Dropbox); fall back to the
+  // app-generated public gallery URL when none has been saved.
+  const propertyUrl = property.share_url || buildShareUrl(property, null, origin);
   const rooms = units.slice().sort((a, b) => a.sort_order - b.sort_order);
 
   function flagCopied(key: string) {
@@ -125,10 +126,16 @@ export function ShareCard({
   }
 
   return (
-    <div className="ui-card relative flex flex-col overflow-hidden transition hover:shadow-md">
+    <div className="ui-card relative flex flex-col transition hover:shadow-md">
       <div
         className="relative h-36 w-full overflow-hidden"
-        style={{ background: "var(--surface-subtle)" }}
+        style={{
+          background: "var(--surface-subtle)",
+          // Clip the cover to the card's rounded top corners here, so the card
+          // root can keep overflow visible and not clip the Share Room dropdown.
+          borderTopLeftRadius: "inherit",
+          borderTopRightRadius: "inherit",
+        }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -137,12 +144,12 @@ export function ShareCard({
           className="w-full h-full object-cover"
           onError={() => setImgSrc(PROPERTY_FALLBACK_IMAGE)}
         />
-        {/* Floating edit button — manage photos & details for this listing. */}
+        {/* Floating edit button — edit only this listing's public share link. */}
         <button
           type="button"
           onClick={() => setEditOpen(true)}
-          aria-label={`Edit ${property.name}`}
-          title="Edit listing"
+          aria-label={`Edit share link for ${property.name}`}
+          title="Edit share link"
           className="absolute top-2.5 right-2.5 w-8 h-8 rounded-lg flex items-center justify-center transition"
           style={{
             background: "rgba(15,17,22,0.55)",
@@ -184,10 +191,9 @@ export function ShareCard({
                 label="Copy Link"
                 onClick={() => handleCopy(propertyUrl, "property")}
               />
-              <PreviewButton onClick={() => setPreviewOpen(true)} />
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <PrimaryButton
                 copied={copiedKey === "property"}
                 label="Copy Property Link"
@@ -216,7 +222,7 @@ export function ShareCard({
                 {menuOpen && (
                   <div
                     role="menu"
-                    className="absolute right-0 top-[calc(100%+6px)] z-[70] w-60 overflow-hidden rounded-[12px] border"
+                    className="absolute right-0 top-[calc(100%+6px)] z-[70] w-max min-w-[15rem] max-w-[min(26rem,88vw)] overflow-hidden rounded-[12px] border"
                     style={{
                       background: "var(--surface)",
                       borderColor: "var(--border-soft)",
@@ -230,30 +236,44 @@ export function ShareCard({
                         </div>
                       ) : (
                         rooms.map((u) => {
-                          const url = buildShareUrl(property, { slug: roomSlug(u) }, origin);
+                          // Per-room link wins; else the property's link; else the
+                          // app-generated room gallery URL.
+                          const url = u.share_url || property.share_url || buildShareUrl(property, { slug: roomSlug(u) }, origin);
                           const key = `room:${u.id}`;
                           const justCopied = copiedKey === key;
                           return (
-                            <button
-                              key={u.id}
-                              type="button"
-                              role="menuitem"
-                              onClick={() => handleCopy(url, key)}
-                              className="w-full px-4 py-2.5 text-left text-sm transition flex items-center justify-between gap-2 hover:bg-[var(--surface-muted)]"
-                              style={{ color: "var(--text-primary)" }}
-                            >
-                              <span className="truncate">
-                                {u.name}
-                                <span style={{ color: "var(--text-faint)" }}>
-                                  {" · "}{u.is_rented ? "Occupied" : "Vacant"}
+                            <div key={u.id} className="flex items-stretch">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => handleCopy(url, key)}
+                                className="flex-1 min-w-0 px-4 py-2.5 text-left text-sm transition flex items-center justify-between gap-2 hover:bg-[var(--surface-muted)]"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                <span className="whitespace-nowrap">
+                                  {u.name}
+                                  <span style={{ color: "var(--text-faint)" }}>
+                                    {" · "}{u.is_rented ? "Occupied" : "Vacant"}
+                                  </span>
                                 </span>
-                              </span>
-                              {justCopied ? (
-                                <IconCheck className="w-4 h-4 shrink-0" style={{ color: "var(--success)" }} />
-                              ) : (
-                                <IconCopy className="w-4 h-4 shrink-0" style={{ color: "var(--text-faint)" }} />
-                              )}
-                            </button>
+                                {justCopied ? (
+                                  <IconCheck className="w-4 h-4 shrink-0" style={{ color: "var(--success)" }} />
+                                ) : (
+                                  <IconCopy className="w-4 h-4 shrink-0" style={{ color: "var(--text-faint)" }} />
+                                )}
+                              </button>
+                              {/* Per-room link editor — accent when a room link is set. */}
+                              <button
+                                type="button"
+                                onClick={() => { setMenuOpen(false); setEditingRoom(u); }}
+                                aria-label={`Edit share link for ${u.name}`}
+                                title="Edit room link"
+                                className="shrink-0 w-9 flex items-center justify-center transition hover:bg-[var(--surface-muted)]"
+                                style={{ color: u.share_url ? "var(--accent)" : "var(--text-faint)" }}
+                              >
+                                <IconEdit className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           );
                         })
                       )}
@@ -261,7 +281,6 @@ export function ShareCard({
                   </div>
                 )}
               </div>
-              <PreviewButton onClick={() => setPreviewOpen(true)} />
             </div>
           )}
 
@@ -276,17 +295,23 @@ export function ShareCard({
         </div>
       </div>
 
-      <SharePreviewModal
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        property={property}
-        units={units}
-      />
-      <PropertyEditModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        property={editOpen ? property : null}
-      />
+      {editOpen && (
+        <ShareLinkEditModal
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          property={property}
+          origin={origin}
+        />
+      )}
+      {editingRoom && (
+        <ShareRoomLinkEditModal
+          open
+          onClose={() => setEditingRoom(null)}
+          property={property}
+          unit={editingRoom}
+          origin={origin}
+        />
+      )}
     </div>
   );
 }
@@ -318,21 +343,6 @@ function PrimaryButton({
           <span className="truncate">{label}</span>
         </>
       )}
-    </button>
-  );
-}
-
-function PreviewButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="ui-btn"
-      aria-label="Preview the public page"
-      title="Preview"
-    >
-      <IconEye className="w-4 h-4 shrink-0" />
-      <span>Preview</span>
     </button>
   );
 }

@@ -25,17 +25,20 @@ type EntryState = {
 
 const CUR_YEAR = new Date().getFullYear();
 
-function monthKey(y: number, m: number) {
-  return y * 100 + m;
-}
-function parseMonthInput(s: string): { y: number; m: number } | null {
+/** Parse a "YYYY-MM-DD" input into a comparable YYYYMMDD number, or null if empty/invalid. */
+function parseDayInput(s: string): number | null {
   if (!s) return null;
-  const [y, m] = s.split("-").map(Number);
-  if (!y || !m) return null;
-  return { y, m };
+  const [y, m, d] = s.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return y * 10000 + m * 100 + d;
 }
-function toMonthInput(y: number, m: number) {
-  return `${y}-${String(m).padStart(2, "0")}`;
+/** Day key for an entry: its payment_date when present, else the 1st of its year/month. */
+function entryDayKey(year: number, month: number, isoDate?: string | null): number {
+  if (isoDate) {
+    const k = parseDayInput(isoDate);
+    if (k != null) return k;
+  }
+  return year * 10000 + month * 100 + 1;
 }
 
 function fmt(value: number) {
@@ -58,8 +61,8 @@ export default function RevenuePage() {
     useRental();
   const confirm = useConfirm();
 
-  const [fromMonth, setFromMonth] = useState(toMonthInput(CUR_YEAR, 1));
-  const [toMonth, setToMonth] = useState(toMonthInput(CUR_YEAR, 12));
+  const [fromDate, setFromDate] = useState(`${CUR_YEAR}-01-01`);
+  const [toDate, setToDate] = useState(`${CUR_YEAR}-12-31`);
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
   const [filterUnit, setFilterUnit] = useState("all");
@@ -82,14 +85,17 @@ export default function RevenuePage() {
           }, []);
 
   const filtered = useMemo(() => {
-    const from = parseMonthInput(fromMonth);
-    const to = parseMonthInput(toMonth);
+    // Day-level bounds (YYYYMMDD). Defensive swap if From is after To.
+    let lo = parseDayInput(fromDate);
+    let hi = parseDayInput(toDate);
+    if (lo != null && hi != null && lo > hi) [lo, hi] = [hi, lo];
     const q = search.trim().toLowerCase();
 
     return revenueEntries
       .filter((e) => {
-        if (from && monthKey(e.year, e.month) < monthKey(from.y, from.m)) return false;
-        if (to && monthKey(e.year, e.month) > monthKey(to.y, to.m)) return false;
+        const k = entryDayKey(e.year, e.month, e.payment_date);
+        if (lo != null && k < lo) return false;
+        if (hi != null && k > hi) return false; // To boundary inclusive
         return true;
       })
       .filter((e) => filterProp === "all" || e.property_id === filterProp)
@@ -116,8 +122,8 @@ export default function RevenuePage() {
       });
   }, [
     revenueEntries,
-    fromMonth,
-    toMonth,
+    fromDate,
+    toDate,
     search,
     filterProp,
     filterUnit,
@@ -128,7 +134,7 @@ export default function RevenuePage() {
 
   const totalRevenue = filtered.reduce((s, e) => s + e.total_amount, 0);
 
-  const resetKey = `${fromMonth}|${toMonth}|${search}|${filterProp}|${filterUnit}|${filterStatus}`;
+  const resetKey = `${fromDate}|${toDate}|${search}|${filterProp}|${filterUnit}|${filterStatus}`;
   const { page, setPage, totalPages, total, pageSize, pageItems } = usePagination(filtered, 10, resetKey);
 
   async function handleDelete(id: string, label: string) {
@@ -171,21 +177,21 @@ export default function RevenuePage() {
       <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
         {/* Date range */}
         <DatePickerField
-          granularity="month"
+          granularity="day"
           className="w-[150px]"
-          value={fromMonth}
-          onChange={setFromMonth}
-          placeholder="From month"
-          ariaLabel="From month"
+          value={fromDate}
+          onChange={setFromDate}
+          placeholder="From date"
+          ariaLabel="From date"
         />
         <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
         <DatePickerField
-          granularity="month"
+          granularity="day"
           className="w-[150px]"
-          value={toMonth}
-          onChange={setToMonth}
-          placeholder="To month"
-          ariaLabel="To month"
+          value={toDate}
+          onChange={setToDate}
+          placeholder="To date"
+          ariaLabel="To date"
         />
 
         {/* Search */}
