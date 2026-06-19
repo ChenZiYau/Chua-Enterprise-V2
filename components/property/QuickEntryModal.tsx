@@ -40,10 +40,10 @@ export function QuickEntryModal({
   const [unitId, setUnitId] = useState("");
   // The entry date drives the billing period (year + month) for the form.
   const [entryDate, setEntryDate] = useState(todayIso());
-  // Collapsible Entry Date section. Expanded by default; reset to open on every
-  // modal open (see effect below) so the calendar is always visible on mount,
-  // regardless of how it was left last time. The user can still collapse it.
-  const [dateOpen, setDateOpen] = useState(true);
+  // Collapsible Entry Date section. Collapsed by default; reset to closed on
+  // every modal open (see effect below) so the field renders as a normal
+  // collapsed control. The user opens the calendar by clicking the field.
+  const [dateOpen, setDateOpen] = useState(false);
   const [y, m, d] = entryDate.split("-").map(Number);
   const year = y;
   const monthIdx = m - 1;
@@ -60,7 +60,7 @@ export function QuickEntryModal({
     if (!open) return;
     setTab(initialTab);
     setEntryDate(todayIso());
-    setDateOpen(true);
+    setDateOpen(false);
     setDirty(false);
     setUnitId(getUnitsForProperty(propertyId)[0]?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,6 +141,7 @@ export function QuickEntryModal({
             value={entryDate}
             onChange={setEntryDate}
             granularity="day"
+            onCommit={() => setDateOpen(false)}
             className="shadow-[0_8px_24px_rgba(15,17,22,0.18)]"
           />
           <p className="text-xs px-1" style={{ color: "var(--text-muted)" }}>
