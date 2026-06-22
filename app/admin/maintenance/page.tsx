@@ -15,7 +15,7 @@ type MaintenanceStatus = "pending" | "in_progress" | "completed";
 type MaintenancePriority = "low" | "medium" | "high" | "urgent";
 type MaintenanceTab = "all" | MaintenanceStatus | "overdue";
 type DialogMode = "new" | "view" | "edit";
-type DrawerView = "normal" | "expanded" | "minimized";
+type DrawerView = "normal" | "expanded";
 
 type MaintenanceCase = {
   id: string;
@@ -982,36 +982,6 @@ function MaintenanceDialog({
     }));
   }
 
-  if (view === "minimized") {
-    return (
-      <div
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl px-4 py-3"
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border-soft)",
-          boxShadow: "0 8px 32px rgba(15,17,22,0.16)",
-          maxWidth: "min(92vw, 360px)",
-        }}
-      >
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-            Maintenance case
-          </p>
-          <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-            {mode === "new" ? "Add Case" : selectedCase?.issue ?? "Maintenance"}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setView("normal")}
-          className="ui-btn shrink-0"
-          style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
-        >
-          Restore
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
@@ -1046,9 +1016,6 @@ function MaintenanceDialog({
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <IconBtn label="Minimize" onClick={() => setView("minimized")}>
-              <MinimizeIcon />
-            </IconBtn>
             <IconBtn label={view === "expanded" ? "Collapse" : "Expand"} onClick={() => setView(view === "expanded" ? "normal" : "expanded")}>
               {view === "expanded" ? <CollapseIcon /> : <ExpandIcon />}
             </IconBtn>
@@ -1403,14 +1370,6 @@ function IconBtn({ label, onClick, children }: { label: string; onClick: () => v
     >
       {children}
     </button>
-  );
-}
-
-function MinimizeIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14" />
-    </svg>
   );
 }
 

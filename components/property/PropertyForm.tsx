@@ -136,7 +136,7 @@ export function PropertyForm({
     setSaving(true);
     setSubmitError(null);
     try {
-      await onSubmit({ ...values, total_units: total, rented_units: rented });
+      await onSubmit({ ...values, short_name: values.name, total_units: total, rented_units: rented });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Could not save property to Notion.");
     } finally {
@@ -234,15 +234,6 @@ export function PropertyForm({
               style={inputStyle}
               value={values.name}
               onChange={(e) => set("name", e.target.value)}
-            />
-          </Field>
-          <Field label="Short name">
-            <input
-              className={inputClass}
-              style={inputStyle}
-              placeholder="Display alias, e.g. 'Menjalara'"
-              value={values.short_name}
-              onChange={(e) => set("short_name", e.target.value)}
             />
           </Field>
           <Field label="Description" full>

@@ -37,6 +37,8 @@ type Props = {
   /** Force-enable/disable upload+crop. Defaults to "enabled when a Blob consumer
    *  exists". Pass false to offer paste-a-URL only. */
   allowUpload?: boolean;
+  /** Hide the "Paste link" tab so the control is upload-only (no URL entry). */
+  hideLinkOption?: boolean;
 };
 
 const boxStyle: React.CSSProperties = {
@@ -44,7 +46,7 @@ const boxStyle: React.CSSProperties = {
   background: "var(--surface)",
 };
 
-export function CoverImageInput({ value, onUrlChange, onFileChange, onCommit, allowUpload }: Props) {
+export function CoverImageInput({ value, onUrlChange, onFileChange, onCommit, allowUpload, hideLinkOption }: Props) {
   // Adder mode (gallery) commits each image and resets; single-value mode (cover)
   // holds one value.
   const adder = typeof onCommit === "function";
@@ -305,7 +307,7 @@ export function CoverImageInput({ value, onUrlChange, onFileChange, onCommit, al
   // ---- Empty: choose upload or link ----
   return (
     <div className="flex flex-col gap-3">
-      {canUpload && (
+      {canUpload && !hideLinkOption && (
       <div className="flex gap-1.5">
         {(["upload", "link"] as const).map((t) => {
           const active = tab === t;

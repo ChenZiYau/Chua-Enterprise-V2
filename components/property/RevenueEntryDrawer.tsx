@@ -16,7 +16,7 @@ import { computeProration, prorationNote, composeProratedNotes, daysInMonth, par
 import { Select } from "@/components/ui/Select";
 import { DatePickerField } from "@/components/ui/DatePicker";
 
-type View = "normal" | "expanded" | "minimized";
+type View = "normal" | "expanded";
 
 const inputCls = "w-full px-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)]";
 const inputStyle: React.CSSProperties = { borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" };
@@ -25,6 +25,26 @@ const labelStyle: React.CSSProperties = { color: "var(--text-faint)" };
 
 function fmt(v: number) {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR", minimumFractionDigits: 2 }).format(v);
+}
+
+/** The most recent saved electricity meter reading for a unit, strictly before
+ *  the given billing period — i.e. "last month's" reading. Null when the unit
+ *  has no earlier reading (this entry sets the baseline). */
+function previousReading(
+  revenueEntries: ReturnType<typeof useRental>["revenueEntries"],
+  unitId: string,
+  year: number,
+  month: number
+): number | null {
+  const prior = revenueEntries
+    .filter(
+      (e) =>
+        e.unit_id === unitId &&
+        e.electricity_units != null &&
+        (e.year < year || (e.year === year && e.month < month))
+    )
+    .sort((a, b) => b.year - a.year || b.month - a.month);
+  return prior.length ? (prior[0].electricity_units ?? null) : null;
 }
 
 export function RevenueEntryDrawer({
@@ -48,6 +68,7 @@ export function RevenueEntryDrawer({
   const {
     visibleProperties, getUnitsForProperty, getUnit,
     getRevenueEntry, getRevenueForUnit, addRevenueEntry, updateRevenueEntry,
+    revenueEntries,
   } = useRental();
   const now = new Date();
 
@@ -167,9 +188,15 @@ export function RevenueEntryDrawer({
     };
   }
 
-  const elecUnitsNum = parseFloat(elecUnits) || 0;
+  // Electricity is entered as the current meter reading; usage = this reading −
+  // last month's reading, then the free allowance + TNB tiers apply. The first
+  // reading sets a baseline (no usage to bill). The reading is saved so it's the
+  // "last month" value next time.
+  const reading = parseFloat(elecUnits) || 0;
   const freeUnits = unit?.electricity_free_units ?? 0;
-  const elecBill = elecUnitsNum > 0 ? calculateElectricityCharge(elecUnitsNum, freeUnits) : null;
+  const prevReading = previousReading(revenueEntries, unitId, year, month);
+  const elecUsage = reading > 0 && prevReading != null ? Math.max(0, reading - prevReading) : 0;
+  const elecBill = reading > 0 && prevReading != null ? calculateElectricityCharge(elecUsage, freeUnits) : null;
   const elecAmount = elecBill?.chargeAmount ?? 0;
   const rentalNum = parseFloat(rental) || 0;
   const otherNum = parseFloat(otherCharges) || 0;
@@ -189,22 +216,22 @@ export function RevenueEntryDrawer({
   }, [dirty, saved, onClose]);
 
   useEffect(() => {
-    if (!open || view === "minimized") return;
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
-  }, [open, view]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       if (confirmOpen) setConfirmOpen(false);
-      else if (view !== "minimized") attemptClose();
+      else attemptClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, confirmOpen, view, attemptClose]);
+  }, [open, confirmOpen, attemptClose]);
 
   const activePropertyName = useMemo(
     () => visibleProperties.find((p) => p.id === selectedProperty)?.name ?? "Enter revenue",
@@ -230,7 +257,9 @@ export function RevenueEntryDrawer({
     const input = {
       property_id: selectedProperty, unit_id: unitId, year, month,
       rental_amount: effectiveRental,
-      electricity_units: elecUnitsNum || null,
+      // Persist the meter reading (not the usage) so it becomes next month's
+      // "last month" reading for the delta calculation.
+      electricity_units: reading || null,
       electricity_amount: elecAmount || null,
       other_charges_amount: otherNum || null,
       total_amount: totalAmount,
@@ -260,28 +289,6 @@ export function RevenueEntryDrawer({
 
   if (!open) return null;
 
-  // -- Minimized bar --
-  if (view === "minimized") {
-    return (
-      <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl px-4 py-3"
-        style={{ background: "var(--surface)", border: "1px solid var(--border-soft)", boxShadow: "0 8px 32px rgba(15,17,22,0.16)", animation: "rvSlideUp 200ms cubic-bezier(.2,.7,.2,1)", maxWidth: "min(92vw, 340px)" }}>
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-            Revenue{dirty ? " - unsaved" : ""}
-          </p>
-          <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-            {activePropertyName}{unit ? ` - ${unit.name}` : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button type="button" onClick={() => setView("normal")} className="ui-btn" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}>Restore</button>
-        </div>
-        {confirmOpen && <ConfirmDialog onSave={() => handleSave(false)} onDiscard={() => { setConfirmOpen(false); onClose(); }} onCancel={() => setConfirmOpen(false)} />}
-        <Keyframes />
-      </div>
-    );
-  }
-
   const widthClass = view === "expanded" ? "max-w-5xl" : "max-w-3xl";
 
   return (
@@ -305,7 +312,6 @@ export function RevenueEntryDrawer({
             <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Record rent and charges for a room or unit.</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <IconBtn label="Minimize" onClick={() => setView("minimized")}><MinimizeIcon /></IconBtn>
             <IconBtn label={view === "expanded" ? "Collapse" : "Expand"} onClick={() => setView(view === "expanded" ? "normal" : "expanded")}>
               {view === "expanded" ? <CollapseIcon /> : <ExpandIcon />}
             </IconBtn>
@@ -415,17 +421,27 @@ export function RevenueEntryDrawer({
 
             {prorate && (
               <div className="rounded-lg px-3 py-3 flex flex-col gap-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
-                <div>
-                  <label className={labelCls} style={labelStyle}>Tenant start date</label>
-                  <DatePickerField
-                    value={startDate}
-                    onChange={(v) => { setStartDate(v); setDirty(true); }}
-                    min={`${year}-${monthStr}-01`}
-                    max={`${year}-${monthStr}-${String(dim).padStart(2, "0")}`}
-                    invalid={!!errors.startDate}
-                    ariaLabel="Tenant start date"
-                  />
-                  {errors.startDate && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.startDate}</p>}
+                <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls} style={labelStyle}>Start date</label>
+                    <DatePickerField
+                      value={startDate}
+                      onChange={(v) => { setStartDate(v); setDirty(true); }}
+                      min={`${year}-${monthStr}-01`}
+                      max={`${year}-${monthStr}-${String(dim).padStart(2, "0")}`}
+                      invalid={!!errors.startDate}
+                      ariaLabel="Tenant start date"
+                    />
+                    {errors.startDate && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.startDate}</p>}
+                  </div>
+                  <div>
+                    <label className={labelCls} style={labelStyle}>End date</label>
+                    <div className={`${inputCls} flex items-center cursor-not-allowed`}
+                      style={{ ...inputStyle, background: "var(--surface-subtle)", color: "var(--text-muted)" }}
+                      title="Rent is charged through the end of the billing month">
+                      {`${String(dim).padStart(2, "0")} ${MONTHS[month - 1]} ${year}`}
+                    </div>
+                  </div>
                 </div>
                 {proration && (
                   <div className="text-xs flex flex-col gap-0.5" style={{ color: "var(--text-muted)" }}>
@@ -439,16 +455,22 @@ export function RevenueEntryDrawer({
               </div>
             )}
             <div>
-              <label className={labelCls} style={labelStyle}>Electricity usage (kWh)</label>
-              <input type="number" inputMode="decimal" min={0} step="1" placeholder="e.g. 120" className={inputCls} style={inputStyle}
+              <label className={labelCls} style={labelStyle}>Electricity meter reading (kWh)</label>
+              <input type="number" inputMode="decimal" min={0} step="1" placeholder="e.g. 3800" className={inputCls} style={inputStyle}
                 value={elecUnits} onChange={onText(setElecUnits)} />
-              {elecBill ? (
+              {reading > 0 && prevReading != null && elecBill ? (
                 <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-                  {elecBill.unitsUsed} - {elecBill.freeUnits} free = {elecBill.chargeableUnits} kWh &#8594; <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
+                  {reading} − {prevReading} (last month) = {elecUsage} kWh − {freeUnits} free = {elecBill.chargeableUnits} kWh &#8594; <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
                 </p>
-              ) : freeUnits > 0 ? (
-                <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>{freeUnits} kWh free. Enter a reading to auto-calculate the charge.</p>
-              ) : null}
+              ) : reading > 0 && prevReading == null ? (
+                <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
+                  First reading for this room — saved as the baseline. The charge starts from next month&apos;s reading.
+                </p>
+              ) : (
+                <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
+                  Enter this month&apos;s meter reading{prevReading != null ? ` (last month: ${prevReading})` : ""}. Last month and {freeUnits} free kWh are subtracted automatically.
+                </p>
+              )}
             </div>
           </div>
 
@@ -572,9 +594,6 @@ function IconBtn({ label, onClick, children }: { label: string; onClick: () => v
 }
 function CloseIcon({ size = 14 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>;
-}
-function MinimizeIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /></svg>;
 }
 function ExpandIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>;

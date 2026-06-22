@@ -235,6 +235,7 @@ export type ExpenseRow = {
   description: string;
   isRecurring: boolean;
   isIrregular: boolean;
+  isFixed: boolean;
 };
 
 export async function getProperties(): Promise<PropertyRow[]> {
@@ -344,6 +345,7 @@ export async function getExpenses(): Promise<ExpenseRow[]> {
     description: txt(r.properties["Description"]),
     isRecurring: bool(r.properties["Is Recurring"]),
     isIrregular: bool(r.properties["Is Irregular"]),
+    isFixed: bool(r.properties["Is Fixed"]),
   }));
 }
 
@@ -588,6 +590,7 @@ function buildExpenseProps(f: AnyFields): Record<string, PropValue> {
   if (has(f, "description")) p["Description"] = pText(f.description as string);
   if (has(f, "isRecurring")) p["Is Recurring"] = pCheck(!!f.isRecurring);
   if (has(f, "isIrregular")) p["Is Irregular"] = pCheck(!!f.isIrregular);
+  if (has(f, "isFixed")) p["Is Fixed"] = pCheck(!!f.isFixed);
   return p;
 }
 

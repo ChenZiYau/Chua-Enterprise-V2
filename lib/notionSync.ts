@@ -147,6 +147,7 @@ export function expenseCreateFields(e: ExpenseEntry, names: Names) {
     description: e.description ?? null,
     isRecurring: !!e.is_recurring,
     isIrregular: !!e.is_irregular,
+    isFixed: !!e.is_fixed,
   };
 }
 
@@ -163,6 +164,7 @@ export function expensePatchFields(patch: Partial<ExpenseEntry>, names: Names) {
   if ("description" in patch) f.description = patch.description ?? null;
   if ("is_recurring" in patch) f.isRecurring = !!patch.is_recurring;
   if ("is_irregular" in patch) f.isIrregular = !!patch.is_irregular;
+  if ("is_fixed" in patch) f.isFixed = !!patch.is_fixed;
   return f;
 }
 

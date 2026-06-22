@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import { Select } from "@/components/ui/Select";
+import { DatePickerField } from "@/components/ui/DatePicker";
 import {
   MONTHS_FULL,
   EXPENSE_CATEGORIES,
@@ -10,26 +11,30 @@ import {
   type ExpenseCategory,
 } from "@/types/rental";
 
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 type Item = {
   key: string;
   category: ExpenseCategory;
   description: string;
   amount: string;
+  /** Payment date for this line — defaults to today; user can change it. */
+  date: string;
+  /** Whether this expense / maintenance issue has been fixed/resolved. */
+  fixed: boolean;
 };
 
 let _seq = 0;
 function newItem(): Item {
   _seq += 1;
-  return { key: `qe-item-${_seq}`, category: "maintenance", description: "", amount: "" };
+  return { key: `qe-item-${_seq}`, category: "maintenance", description: "", amount: "", date: todayISO(), fixed: false };
 }
 
 function fmt(v: number) {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR", minimumFractionDigits: 2 }).format(v);
-}
-
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /**
@@ -94,7 +99,6 @@ export function ExpenseEntryForm({
 
   async function handleSave() {
     if (!canSave) return;
-    const date = todayISO();
     setSaving(true);
     setSaveError(null);
     try {
@@ -105,13 +109,14 @@ export function ExpenseEntryForm({
           unit_id: showRoomSelector ? (unitId || null) : null,
           year,
           month,
-          expense_date: date,
+          expense_date: it.date || todayISO(),
           category: it.category,
           custom_category: it.category === "other" ? desc : null,
           amount: parseFloat(it.amount) || 0,
           description: desc,
           is_recurring: false,
           is_irregular: false,
+          is_fixed: it.fixed,
         });
       }
       setSavedCount(validItems.length);
@@ -150,7 +155,6 @@ export function ExpenseEntryForm({
   );
 
   const itemRows = items.map((it, i) => {
-    const amt = parseFloat(it.amount) || 0;
     return (
       <div key={it.key} className="rounded-xl p-3 flex flex-col gap-2.5"
         style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
@@ -164,11 +168,7 @@ export function ExpenseEntryForm({
           </button>
         </div>
 
-        <input type="text" inputMode="text" placeholder="What was it? e.g. Fixed kitchen tap"
-          className="w-full px-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)]"
-          style={{ borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" }}
-          value={it.description} onChange={(e) => updateItem(it.key, { description: e.target.value })} />
-
+        {/* Category + amount */}
         <div className="grid grid-cols-1 @sm:grid-cols-[1fr_140px] gap-2.5">
           <Select
             value={it.category}
@@ -184,9 +184,35 @@ export function ExpenseEntryForm({
               value={it.amount} onChange={(e) => updateItem(it.key, { amount: e.target.value })} />
           </div>
         </div>
-        {amt > 0 && it.description.trim() === "" && (
-          <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>Tip: add a short note so you remember what this was.</p>
-        )}
+
+        {/* Detail (optional) */}
+        <input type="text" inputMode="text" placeholder="Detail (Optional)"
+          className="w-full px-3 py-2.5 text-sm rounded-lg border outline-none transition focus:border-[var(--accent)]"
+          style={{ borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" }}
+          value={it.description} onChange={(e) => updateItem(it.key, { description: e.target.value })} />
+
+        {/* Payment date — defaults to today, collapsed until opened */}
+        <div>
+          <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] mb-1.5" style={{ color: "var(--text-faint)" }}>
+            Payment date
+          </label>
+          <DatePickerField
+            value={it.date}
+            onChange={(v) => updateItem(it.key, { date: v })}
+            ariaLabel={`Payment date for item ${i + 1}`}
+          />
+        </div>
+
+        {/* Fixed toggle — marks the maintenance/expense as resolved (drives the
+            green vs yellow month colouring). */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={it.fixed}
+            onChange={(e) => updateItem(it.key, { fixed: e.target.checked })}
+            style={{ accentColor: "var(--success)", width: 14, height: 14 }} />
+          <span className="text-xs font-medium" style={{ color: it.fixed ? "var(--success)" : "var(--text-muted)" }}>
+            Fixed / resolved
+          </span>
+        </label>
       </div>
     );
   });
@@ -217,21 +243,21 @@ export function ExpenseEntryForm({
     </>
   );
 
-  const totalDisplay = (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>
-        Total - {validItems.length} {validItems.length === 1 ? "item" : "items"}
-      </span>
-      <span className="text-xl font-bold tabular-nums leading-tight" style={{ color: "var(--danger)" }}>{fmt(total)}</span>
-      <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
-        Expenses YTD becomes {fmt(ytd.expenses + total)}
-      </span>
+  // Total month expenses — mirrors the Revenue form's "Total month revenue" row.
+  const totalRow = (
+    <div className="flex items-center justify-between rounded-lg px-3 py-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
+      <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Total month expenses</span>
+      <span className="text-xl font-bold tabular-nums" style={{ color: "var(--danger)" }}>{fmt(total)}</span>
     </div>
   );
   const saveButton = (
     <button type="button" className="ui-btn ui-btn-primary justify-center" disabled={!canSave || saving}
       style={{ opacity: !canSave || saving ? 0.55 : 1 }} onClick={handleSave}>
-      {saving ? "Saving..." : `Save ${validItems.length || ""} ${validItems.length === 1 ? "expense" : "expenses"}`.trim()}
+      {saving
+        ? "Saving..."
+        : validItems.length > 1
+          ? `Save ${validItems.length} Expenses`
+          : "Save Expenses"}
     </button>
   );
 
@@ -240,13 +266,14 @@ export function ExpenseEntryForm({
     return (
       <div className="flex flex-col flex-1 min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] flex-1 min-h-0">
-          {/* LEFT — date picker (scrolls if it exceeds height) */}
-          <div className="flex flex-col gap-3 px-5 py-4 lg:border-r overflow-y-auto min-h-0" style={{ borderColor: "var(--border-soft)" }}>
+          {/* LEFT — month selector only. Matches the Revenue form: no scroll,
+              sized to fit the panel. */}
+          <div className="flex flex-col gap-3 px-5 py-4 lg:border-r min-h-0 overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ borderColor: "var(--border-soft)" }}>
             {datePanel}
           </div>
 
           {/* RIGHT — expense items (only this body scrolls) */}
-          <div className="@container flex flex-col gap-3 px-5 py-4 overflow-y-auto min-h-0">
+          <div className="@container flex flex-col gap-4 px-5 py-4 overflow-y-auto min-h-0">
             {contextSlot}
             {roomField}
             {intro}
@@ -255,13 +282,11 @@ export function ExpenseEntryForm({
           </div>
         </div>
 
-        {/* STICKY FOOTER — total + action, always visible */}
+        {/* STICKY FOOTER — total month expenses + Save action, always visible */}
         <div className="px-5 py-3 flex flex-col gap-2.5 shrink-0 sticky bottom-0 z-10" style={{ borderTop: "1px solid var(--border-soft)", background: "var(--surface)" }}>
           {banners}
-          <div className="flex items-center justify-between gap-4">
-            {totalDisplay}
-            <div className="flex">{saveButton}</div>
-          </div>
+          {totalRow}
+          <div className="flex items-center justify-end gap-2">{saveButton}</div>
         </div>
       </div>
     );

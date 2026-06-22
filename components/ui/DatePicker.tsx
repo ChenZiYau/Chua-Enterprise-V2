@@ -425,7 +425,6 @@ export function DatePickerField({
           background: "var(--surface)",
           borderColor: invalid ? "var(--danger)" : open ? "var(--accent)" : "var(--border-soft)",
           color: value ? "var(--text-primary)" : "var(--text-muted)",
-          boxShadow: open ? "0 0 0 3px var(--accent-ring)" : undefined,
         }}
       >
         <span className="truncate">{display}</span>

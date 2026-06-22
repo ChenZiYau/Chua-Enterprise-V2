@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -52,7 +53,7 @@ function fmt(value: number) {
 const STATUS_COLORS: Record<PaymentStatus, { bg: string; text: string }> = {
   paid: { bg: "rgba(47,158,111,0.10)", text: "var(--success)" },
   partial: { bg: "rgba(224,162,61,0.10)", text: "var(--warning)" },
-  pending: { bg: "rgba(93,95,239,0.10)", text: "var(--accent)" },
+  pending: { bg: "rgba(224,162,61,0.10)", text: "var(--warning)" },
   overdue: { bg: "rgba(211,84,84,0.10)", text: "var(--danger)" },
 };
 
@@ -173,85 +174,88 @@ export default function RevenuePage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="ui-card p-4 flex flex-wrap gap-3 items-center">
-        {/* Date range */}
-        <DatePickerField
-          granularity="day"
-          className="w-[150px]"
-          value={fromDate}
-          onChange={setFromDate}
-          placeholder="From date"
-          ariaLabel="From date"
-        />
-        <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
-        <DatePickerField
-          granularity="day"
-          className="w-[150px]"
-          value={toDate}
-          onChange={setToDate}
-          placeholder="To date"
-          ariaLabel="To date"
-        />
-
-        {/* Search */}
-        <input
-          type="search"
-          className="ui-input w-auto min-w-[200px] flex-1 max-w-[280px]"
-          placeholder="Search property, unit, tenant, notes..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        {/* Property */}
-        <Select
-          className="w-auto min-w-[160px]"
-          ariaLabel="Filter by property"
-          value={filterProp}
-          onChange={(v) => {
-            setFilterProp(v);
-            setFilterUnit("all");
-          }}
-          options={[
-            { value: "all", label: "All Properties" },
-            ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
-          ]}
-        />
-
-        {/* Unit - only shown when a property is selected */}
-        {filterProp !== "all" && unitOptions.length > 0 && (
-          <Select
-            className="w-auto min-w-[140px]"
-            ariaLabel="Filter by unit"
-            value={filterUnit}
-            onChange={setFilterUnit}
-            options={[
-              { value: "all", label: "All Units" },
-              ...unitOptions.map((u) => ({ value: u.id, label: u.name })),
-            ]}
+      {/* Filters — two rows, matching the layout: dates + property/unit/status
+          on top; search + total on the bottom. */}
+      <div className="ui-card p-4 flex flex-col gap-3">
+        {/* Row 1: date range (left) · property / unit / status (right) */}
+        <div className="flex flex-wrap items-center gap-3">
+          <DatePickerField
+            granularity="day"
+            className="w-[150px]"
+            value={fromDate}
+            onChange={setFromDate}
+            placeholder="From date"
+            ariaLabel="From date"
           />
-        )}
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>to</span>
+          <DatePickerField
+            granularity="day"
+            className="w-[150px]"
+            value={toDate}
+            onChange={setToDate}
+            placeholder="To date"
+            ariaLabel="To date"
+          />
 
-        {/* Status */}
-        <Select
-          className="w-auto min-w-[130px]"
-          ariaLabel="Filter by status"
-          value={filterStatus}
-          onChange={setFilterStatus}
-          options={[
-            { value: "all", label: "All Statuses" },
-            { value: "paid", label: "Paid" },
-            { value: "partial", label: "Partial" },
-            { value: "pending", label: "Pending" },
-            { value: "overdue", label: "Overdue" },
-          ]}
-        />
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            {/* Property */}
+            <Select
+              className="w-auto min-w-[160px]"
+              ariaLabel="Filter by property"
+              value={filterProp}
+              onChange={(v) => {
+                setFilterProp(v);
+                setFilterUnit("all");
+              }}
+              options={[
+                { value: "all", label: "All Properties" },
+                ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
 
-        <div
-          className="ml-auto text-sm font-semibold"
-          style={{ color: "var(--success)" }}
-        >
-          Total: {fmt(totalRevenue)}
+            {/* Unit - only shown when a property is selected */}
+            {filterProp !== "all" && unitOptions.length > 0 && (
+              <Select
+                className="w-auto min-w-[140px]"
+                ariaLabel="Filter by unit"
+                value={filterUnit}
+                onChange={setFilterUnit}
+                options={[
+                  { value: "all", label: "All Units" },
+                  ...unitOptions.map((u) => ({ value: u.id, label: u.name })),
+                ]}
+              />
+            )}
+
+            {/* Status */}
+            <Select
+              className="w-auto min-w-[130px]"
+              ariaLabel="Filter by status"
+              value={filterStatus}
+              onChange={setFilterStatus}
+              options={[
+                { value: "all", label: "All Statuses" },
+                { value: "paid", label: "Paid" },
+                { value: "partial", label: "Partial" },
+                { value: "pending", label: "Pending" },
+                { value: "overdue", label: "Overdue" },
+              ]}
+            />
+          </div>
+        </div>
+
+        {/* Row 2: search (left) · total (right) */}
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="search"
+            className="ui-input w-auto min-w-[200px] flex-1 max-w-[360px]"
+            placeholder="Search property, unit, tenant, notes..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="ml-auto text-sm font-semibold" style={{ color: "var(--success)" }}>
+            Total: {fmt(totalRevenue)}
+          </div>
         </div>
       </div>
 
@@ -282,37 +286,23 @@ export default function RevenuePage() {
           <table className="w-full text-sm whitespace-nowrap">
             <thead style={{ background: "var(--surface-muted)" }}>
               <tr style={{ color: "var(--text-faint)" }}>
-                <th className="text-left text-xs uppercase tracking-wider px-5 py-3">
-                  Property
+                <th className="text-center text-xs uppercase tracking-wider px-5 py-3">Tenant Name</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Property</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Unit</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Month</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Rental</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Electricity</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Other</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Total</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Method</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Status</th>
+                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">Invoice</th>
+                <th
+                  className="text-center text-xs uppercase tracking-wider px-3 py-3 sticky right-0"
+                  style={{ background: "var(--surface-muted)", borderLeft: "1px solid var(--border-soft)" }}
+                >
+                  Action
                 </th>
-                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
-                  Unit
-                </th>
-                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
-                  Month
-                </th>
-                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
-                  Rental
-                </th>
-                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
-                  Electricity
-                </th>
-                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
-                  Other
-                </th>
-                <th className="text-right text-xs uppercase tracking-wider px-4 py-3">
-                  Total
-                </th>
-                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">
-                  Method
-                </th>
-                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
-                  Status
-                </th>
-                <th className="text-center text-xs uppercase tracking-wider px-4 py-3">
-                  Invoice
-                </th>
-                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
@@ -330,7 +320,13 @@ export default function RevenuePage() {
                     className="border-t hover:bg-[var(--surface-muted)] transition-colors"
                     style={{ borderColor: "var(--border-soft)" }}
                   >
-                    <td className="px-5 py-3">
+                    <td
+                      className="px-5 py-3 text-center font-medium"
+                      style={{ color: unit?.tenant_name ? "var(--text-primary)" : "var(--text-faint)" }}
+                    >
+                      {unit?.tenant_name ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
                       <Link
                         href={`/admin/properties/${entry.property_id}`}
                         className="font-medium hover:underline"
@@ -339,105 +335,62 @@ export default function RevenuePage() {
                         {prop?.name ?? entry.property_id}
                       </Link>
                     </td>
-                    <td
-                      className="px-4 py-3"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
+                    <td className="px-4 py-3 text-center" style={{ color: "var(--text-secondary)" }}>
                       {unit?.name ?? entry.unit_id}
                     </td>
-                    <td
-                      className="px-4 py-3"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
+                    <td className="px-4 py-3 text-center" style={{ color: "var(--text-secondary)" }}>
                       {MONTHS[entry.month - 1]} {entry.year}
                     </td>
-                    <td
-                      className="px-4 py-3 text-right tabular-nums"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
+                    <td className="px-4 py-3 text-center tabular-nums" style={{ color: "var(--text-secondary)" }}>
                       {fmt(entry.rental_amount)}
                     </td>
-                    <td
-                      className="px-4 py-3 text-right tabular-nums"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {entry.electricity_amount != null
-                        ? fmt(entry.electricity_amount)
-                        : "-"}
+                    <td className="px-4 py-3 text-center tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                      {entry.electricity_amount != null ? fmt(entry.electricity_amount) : "-"}
                     </td>
-                    <td
-                      className="px-4 py-3 text-right tabular-nums"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {entry.other_charges_amount != null &&
-                      entry.other_charges_amount > 0
+                    <td className="px-4 py-3 text-center tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                      {entry.other_charges_amount != null && entry.other_charges_amount > 0
                         ? fmt(entry.other_charges_amount)
                         : "-"}
                     </td>
-                    <td
-                      className="px-4 py-3 text-right font-semibold tabular-nums"
-                      style={{ color: "var(--success)" }}
-                    >
+                    <td className="px-4 py-3 text-center font-semibold tabular-nums" style={{ color: "var(--success)" }}>
                       {fmt(entry.total_amount)}
                     </td>
-                    <td
-                      className="px-4 py-3"
-                      style={{ color: "var(--text-muted)" }}
-                    >
+                    <td className="px-4 py-3 text-center" style={{ color: "var(--text-muted)" }}>
                       {entry.payment_method
                         ? entry.payment_method === "other"
                           ? (entry.custom_payment_method ?? "Other")
                           : PAYMENT_METHOD_LABEL[entry.payment_method]
                         : "-"}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className="text-xs font-medium px-2 py-0.5 rounded-full"
-                        style={{
-                          background: statusColors.bg,
-                          color: statusColors.text,
-                        }}
-                      >
-                        {PAYMENT_STATUS_LABEL[entry.payment_status ?? "pending"]}
-                      </span>
+                    {/* Status — bold colored text, like the Tenant table. */}
+                    <td className="px-4 py-3 text-center font-semibold" style={{ color: statusColors.text }}>
+                      {PAYMENT_STATUS_LABEL[entry.payment_status ?? "pending"]}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      {entry.invoice_generated ? (
-                        <span className="ui-chip ui-chip-success text-xs">
-                          &#10003; Generated
-                        </span>
-                      ) : (
-                        <span className="ui-chip text-xs">Pending</span>
-                      )}
+                    {/* Invoice — Generated green, Pending yellow. */}
+                    <td
+                      className="px-4 py-3 text-center font-semibold"
+                      style={{ color: entry.invoice_generated ? "var(--success)" : "var(--warning)" }}
+                    >
+                      {entry.invoice_generated ? "Generated" : "Pending"}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setEntry({ open: true, propertyId: entry.property_id, unitId: entry.unit_id, month: entry.month - 1, year: entry.year })}
-                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
-                          title="Edit"
-                          style={{ color: "var(--text-muted)" }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          title="Delete"
-                          onClick={() => handleDelete(entry.id, label)}
-                          className="w-7 h-7 rounded flex items-center justify-center transition border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
-                          style={{ color: "var(--danger)" }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                            <path d="M10 11v6M14 11v6" />
-                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                          </svg>
-                        </button>
+                    {/* Sticky action column, pinned to the right edge. */}
+                    <td
+                      className="px-3 py-3 sticky right-0 z-[1]"
+                      style={{ background: "var(--surface)", borderLeft: "1px solid var(--border-soft)" }}
+                    >
+                      <div className="flex items-center justify-center">
+                        <ActionMenu
+                          onEdit={() =>
+                            setEntry({
+                              open: true,
+                              propertyId: entry.property_id,
+                              unitId: entry.unit_id,
+                              month: entry.month - 1,
+                              year: entry.year,
+                            })
+                          }
+                          onDelete={() => handleDelete(entry.id, label)}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -450,7 +403,7 @@ export default function RevenuePage() {
                 style={{ borderColor: "var(--border-soft)" }}
               >
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-5 py-3 text-sm font-semibold"
                   style={{ color: "var(--text-primary)" }}
                 >
@@ -458,7 +411,7 @@ export default function RevenuePage() {
                   {filtered.length === 1 ? "entry" : "entries"})
                 </td>
                 <td
-                  className="px-4 py-3 text-right font-bold tabular-nums"
+                  className="px-4 py-3 text-center font-bold tabular-nums"
                   style={{ color: "var(--success)" }}
                 >
                   {fmt(totalRevenue)}
@@ -492,5 +445,114 @@ export default function RevenuePage() {
         preselectedYear={entry.year}
       />
     </div>
+  );
+}
+
+/** Kebab action dropdown for a revenue row — Edit / Delete. Renders the menu in
+ *  a fixed-position portal so the table's overflow-x-auto can't clip it. Closes
+ *  on outside click / Esc / scroll. */
+function ActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    function onScrollResize() {
+      setOpen(false);
+    }
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onScrollResize);
+    window.addEventListener("scroll", onScrollResize, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onScrollResize);
+      window.removeEventListener("scroll", onScrollResize, true);
+    };
+  }, [open]);
+
+  const run = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Revenue actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center border hover:bg-[var(--surface-muted)] transition"
+        style={{ color: open ? "var(--accent)" : "var(--text-muted)", borderColor: "var(--border-soft)" }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="12" cy="19" r="1.6" />
+        </svg>
+      </button>
+      {open && pos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              className="fixed z-[80] w-32 rounded-lg border overflow-hidden"
+              style={{
+                top: pos.top,
+                right: pos.right,
+                background: "var(--surface)",
+                borderColor: "var(--border-soft)",
+                boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+              }}
+            >
+              <MenuItem onClick={run(onEdit)}>Edit</MenuItem>
+              <MenuItem danger onClick={run(onDelete)}>Delete</MenuItem>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  );
+}
+
+function MenuItem({
+  children,
+  onClick,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="w-full px-3 py-2 text-left text-xs transition hover:bg-[var(--surface-muted)]"
+      style={{ color: danger ? "var(--danger)" : "var(--text-secondary)" }}
+    >
+      {children}
+    </button>
   );
 }

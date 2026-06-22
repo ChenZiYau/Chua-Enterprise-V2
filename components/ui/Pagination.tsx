@@ -26,17 +26,24 @@ export function usePagination<T>(items: T[], pageSize = 10, resetKey?: unknown) 
   return { page, setPage, totalPages, total, pageSize, start, pageItems };
 }
 
-/** Compact list of page tokens with ellipses, e.g. [1, "…", 4, 5, 6, "…", 12]. */
-function pageTokens(page: number, totalPages: number): (number | "…")[] {
-  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
-  const tokens: (number | "…")[] = [1];
-  const left = Math.max(2, page - 1);
-  const right = Math.min(totalPages - 1, page + 1);
-  if (left > 2) tokens.push("…");
-  for (let i = left; i <= right; i++) tokens.push(i);
-  if (right < totalPages - 1) tokens.push("…");
-  tokens.push(totalPages);
-  return tokens;
+/** A sliding window of at most 5 consecutive page numbers centered on the
+ *  current page (2 either side), clamped to range — no ellipses. E.g. page 1 →
+ *  [1,2,3,4,5]; page 5 → [3,4,5,6,7]; last page → [n-4 … n]. */
+function pageTokens(page: number, totalPages: number): number[] {
+  const WINDOW = 5;
+  if (totalPages <= WINDOW) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  let start = page - 2;
+  let end = page + 2;
+  if (start < 1) {
+    end += 1 - start;
+    start = 1;
+  }
+  if (end > totalPages) {
+    start -= end - totalPages;
+    end = totalPages;
+  }
+  start = Math.max(1, start);
+  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
 }
 
 export function Pagination({
@@ -74,40 +81,33 @@ export function Pagination({
       </p>
 
       {totalPages > 1 && (
-        <nav className="flex items-center gap-1" aria-label="Pagination">
+        <nav className="flex items-center gap-1.5" aria-label="Pagination">
           <PageBtn disabled={page <= 1} onClick={() => onPage(page - 1)} label="Previous">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
+            &#171;
           </PageBtn>
 
-          {tokens.map((t, i) =>
-            t === "…" ? (
-              <span key={`gap-${i}`} className="px-1.5 text-xs" style={{ color: "var(--text-faint)" }}>
-                …
-              </span>
-            ) : (
-              <button
-                key={t}
-                type="button"
-                onClick={() => onPage(t)}
-                aria-current={t === page ? "page" : undefined}
-                className="min-w-8 h-8 px-2 text-xs font-medium rounded-lg transition tabular-nums"
-                style={{
-                  background: t === page ? "var(--accent)" : "var(--surface)",
-                  color: t === page ? "#fff" : "var(--text-secondary)",
-                  border: "1px solid " + (t === page ? "var(--accent)" : "var(--border-soft)"),
-                }}
-              >
-                {t}
-              </button>
-            )
-          )}
+          {tokens.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => onPage(t)}
+              disabled={t === page}
+              aria-current={t === page ? "page" : undefined}
+              className="min-w-9 h-9 px-2.5 inline-flex items-center justify-center text-sm font-semibold rounded-md border transition tabular-nums enabled:hover:bg-[var(--accent-soft)] disabled:cursor-default"
+              style={{
+                background: "transparent",
+                // Current page reads as a faded/inactive token; the rest are
+                // accent-outlined and clickable.
+                color: t === page ? "var(--text-faint)" : "var(--accent)",
+                borderColor: t === page ? "var(--border-soft)" : "var(--accent)",
+              }}
+            >
+              {t}
+            </button>
+          ))}
 
           <PageBtn disabled={page >= totalPages} onClick={() => onPage(page + 1)} label="Next">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            &#187;
           </PageBtn>
         </nav>
       )}
@@ -115,6 +115,7 @@ export function Pagination({
   );
 }
 
+/** Prev/next control — accent-outlined to match the numbered tokens. */
 function PageBtn({
   disabled,
   onClick,
@@ -132,8 +133,8 @@ function PageBtn({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="w-8 h-8 inline-flex items-center justify-center rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
-      style={{ background: "var(--surface)", color: "var(--text-secondary)", border: "1px solid var(--border-soft)" }}
+      className="w-9 h-9 inline-flex items-center justify-center text-base font-semibold leading-none rounded-md border transition enabled:hover:bg-[var(--accent-soft)] disabled:opacity-40 disabled:cursor-not-allowed"
+      style={{ background: "transparent", color: "var(--accent)", borderColor: "var(--accent)" }}
     >
       {children}
     </button>

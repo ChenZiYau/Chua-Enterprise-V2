@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { EditModalShell } from "@/components/ui/EditModalShell";
@@ -66,15 +67,35 @@ function fmt(value: number) {
   }).format(value);
 }
 
+/** Today as a "YYYY-MM-DD" string in local time (matches the date-picker format). */
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Rectangular textarea styling. The shared `.ui-input` is a fully-rounded pill
+// (border-radius: 9999px) meant for single-line inputs — on a resizable
+// textarea its rounded corners let it warp into a circle, so multi-line fields
+// use this squared-off, non-resizable style instead.
+const textareaCls =
+  "w-full px-3.5 py-2.5 text-sm rounded-[10px] border outline-none transition resize-none focus:border-[var(--accent)]";
+const fieldCls =
+  "w-full px-3.5 py-2.5 text-sm rounded-[10px] border outline-none transition focus:border-[var(--accent)]";
+const textareaStyle: React.CSSProperties = {
+  background: "var(--surface)",
+  borderColor: "var(--border-soft)",
+  color: "var(--text-primary)",
+};
+
 const STATUS_COLORS: Record<PaymentStatus, { bg: string; text: string }> = {
   paid: { bg: "rgba(47,158,111,0.10)", text: "var(--success)" },
   partial: { bg: "rgba(224,162,61,0.10)", text: "var(--warning)" },
-  pending: { bg: "rgba(93,95,239,0.10)", text: "var(--accent)" },
+  pending: { bg: "rgba(224,162,61,0.10)", text: "var(--warning)" },
   overdue: { bg: "rgba(211,84,84,0.10)", text: "var(--danger)" },
 };
 
-/** Glow tone for a tenant card: paid → green, overdue → red, anything else
- *  outstanding (pending/partial) → orange. Null payment status → no glow. */
+/** Aura/glow tone for a tenant card by payment status: paid → green,
+ *  pending/partial → yellow, overdue → red. Null payment → no glow. */
 const STATUS_GLOW: Record<PaymentStatus, string> = {
   paid: "ui-glow-green",
   partial: "ui-glow-orange",
@@ -103,6 +124,8 @@ export default function TenantsPage() {
   const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
+  const [filterLease, setFilterLease] = useState<"all" | "active" | "expired">("all");
+  const [filterPay, setFilterPay] = useState<"all" | PaymentStatus>("all");
   const [actionError, setActionError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const confirm = useConfirm();
@@ -134,6 +157,16 @@ export default function TenantsPage() {
         };
       })
       .filter(({ prop }) => filterProp === "all" || prop?.id === filterProp)
+      .filter(({ lease }) => {
+        if (filterLease === "all") return true;
+        // "Expired" matches the danger tone; "Active" is any live lease (active
+        // or ending-soon). Tenants without a lease end are excluded from both.
+        if (!lease) return false;
+        return filterLease === "expired"
+          ? lease.tone === "danger"
+          : lease.tone !== "danger";
+      })
+      .filter(({ payment }) => filterPay === "all" || payment === filterPay)
       .filter(({ tenant, unit, prop }) => {
         if (!q) return true;
         return (
@@ -148,12 +181,12 @@ export default function TenantsPage() {
         );
       })
       .sort((a, b) => a.tenant.name.localeCompare(b.tenant.name));
-  }, [tenants, visibleProperties, getUnit, search, filterProp, revenueEntries]);
+  }, [tenants, visibleProperties, getUnit, search, filterProp, filterLease, filterPay, revenueEntries]);
 
   const { page, setPage, totalPages, total, pageSize, pageItems } = usePagination(
     rows,
     10,
-    `${search}|${filterProp}`
+    `${search}|${filterProp}|${filterLease}|${filterPay}`
   );
 
   async function handleDelete(t: Tenant) {
@@ -205,13 +238,37 @@ export default function TenantsPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
         <Select
-          className="w-auto min-w-[160px]"
+          className="w-auto min-w-[220px]"
           ariaLabel="Filter by property"
           value={filterProp}
           onChange={setFilterProp}
           options={[
             { value: "all", label: "All Properties" },
             ...visibleProperties.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
+        <Select
+          className="w-auto min-w-[160px]"
+          ariaLabel="Filter by lease status"
+          value={filterLease}
+          onChange={(v) => setFilterLease(v as typeof filterLease)}
+          options={[
+            { value: "all", label: "All Leases" },
+            { value: "active", label: "Active Lease" },
+            { value: "expired", label: "Expired Lease" },
+          ]}
+        />
+        <Select
+          className="w-auto min-w-[170px]"
+          ariaLabel="Filter by payment status"
+          value={filterPay}
+          onChange={(v) => setFilterPay(v as typeof filterPay)}
+          options={[
+            { value: "all", label: "All Payments" },
+            ...(["paid", "partial", "pending", "overdue"] as PaymentStatus[]).map((s) => ({
+              value: s,
+              label: PAYMENT_STATUS_LABEL[s],
+            })),
           ]}
         />
         <div className="ml-auto flex items-center gap-3">
@@ -261,7 +318,8 @@ export default function TenantsPage() {
             <TenantCard
               key={tenant.id}
               tenant={tenant}
-              unitLabel={unit ? `${prop?.name ?? ""} - ${unit.name}` : null}
+              propertyName={prop?.name ?? null}
+              unitName={unit?.name ?? null}
               payment={payment}
               lease={lease}
               onView={() => setDrawer({ mode: "view", tenant })}
@@ -287,15 +345,24 @@ export default function TenantsPage() {
             <thead style={{ background: "var(--surface-muted)" }}>
               <tr style={{ color: "var(--text-faint)" }}>
                 <th className="text-left text-xs uppercase tracking-wider px-5 py-3">Name</th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Property</th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Unit</th>
                 <th className="text-left text-xs uppercase tracking-wider px-4 py-3">IC #</th>
                 <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Email</th>
                 <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Phone</th>
-                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Current Unit</th>
-                <th className="px-4 py-3" />
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Payment</th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Lease</th>
+                <th className="text-left text-xs uppercase tracking-wider px-4 py-3">Lease End</th>
+                <th
+                  className="text-center text-xs uppercase tracking-wider px-3 py-3 sticky right-0"
+                  style={{ background: "var(--surface-muted)", borderLeft: "1px solid var(--border-soft)" }}
+                >
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody>
-              {pageItems.map(({ tenant, unit, prop }) => (
+              {pageItems.map(({ tenant, unit, prop, payment, lease }) => (
                 <tr
                   key={tenant.id}
                   onClick={() => setDrawer({ mode: "view", tenant })}
@@ -304,6 +371,12 @@ export default function TenantsPage() {
                 >
                   <td className="px-5 py-3 font-medium" style={{ color: "var(--text-primary)" }}>
                     {tenant.name}
+                  </td>
+                  <td className="px-4 py-3" style={{ color: prop ? "var(--text-secondary)" : "var(--text-faint)" }}>
+                    {prop?.name ?? "—"}
+                  </td>
+                  <td className="px-4 py-3" style={{ color: unit ? "var(--text-secondary)" : "var(--text-faint)" }}>
+                    {unit?.name ?? "—"}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
                     {tenant.ic_number ?? "-"}
@@ -314,41 +387,51 @@ export default function TenantsPage() {
                   <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
                     {tenant.phone ?? "-"}
                   </td>
-                  <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
-                    {unit ? `${prop?.name ?? ""} - ${unit.name}` : "-"}
+                  <td
+                    className="px-4 py-3 font-semibold"
+                    style={{ color: payment ? STATUS_COLORS[payment].text : "var(--text-faint)" }}
+                  >
+                    {payment ? PAYMENT_STATUS_LABEL[payment] : "—"}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDrawer({ mode: "edit", tenant });
-                      }}
-                      className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
-                      title="Edit"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(tenant);
-                      }}
-                      className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)] ml-1"
-                      title="Delete"
-                      style={{ color: "var(--danger)" }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                        <path d="M10 11v6M14 11v6" />
-                      </svg>
-                    </button>
+                  <td
+                    className="px-4 py-3 font-semibold"
+                    style={{ color: lease ? LEASE_TONE_COLORS[lease.tone].text : "var(--text-faint)" }}
+                  >
+                    {lease ? lease.label : "—"}
+                  </td>
+                  <td
+                    className="px-4 py-3"
+                    style={{ color: tenant.lease_end ? "var(--text-secondary)" : "var(--text-faint)" }}
+                  >
+                    {tenant.lease_end ?? "—"}
+                  </td>
+                  {/* Actions pinned to the right edge so they stay visible while
+                      the table scrolls horizontally. */}
+                  <td
+                    className="px-3 py-3 sticky right-0 z-[1]"
+                    style={{ background: "var(--surface)", borderLeft: "1px solid var(--border-soft)" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-center gap-1.5">
+                      <LeaseEndPicker
+                        value={tenant.lease_end}
+                        onChange={async (iso) => {
+                          setActionError(null);
+                          try {
+                            await updateTenant(tenant.id, { lease_end: iso });
+                          } catch (err) {
+                            setActionError(
+                              err instanceof Error ? err.message : "Could not update lease end date."
+                            );
+                          }
+                        }}
+                      />
+                      <CardMenu
+                        onPreview={() => setDrawer({ mode: "view", tenant })}
+                        onEdit={() => setDrawer({ mode: "edit", tenant })}
+                        onDelete={() => handleDelete(tenant)}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -387,6 +470,7 @@ export default function TenantsPage() {
           initial={drawer.mode === "edit" ? drawer.tenant : null}
           properties={visibleProperties}
           units={units}
+          tenants={tenants}
           onClose={() => setDrawer({ mode: "closed" })}
           onSubmit={async (input) => {
             setActionError(null);
@@ -474,9 +558,13 @@ function ViewToggle({
   );
 }
 
+/** Read-only tenant card: a clean "Label : value" record with a single actions
+ *  dropdown (Preview / Edit / Delete). Nothing here is edited inline except the
+ *  lease cogwheel — the card itself is just for showing. */
 function TenantCard({
   tenant,
-  unitLabel,
+  propertyName,
+  unitName,
   payment,
   lease,
   onView,
@@ -485,7 +573,8 @@ function TenantCard({
   onSetLeaseEnd,
 }: {
   tenant: Tenant;
-  unitLabel: string | null;
+  propertyName: string | null;
+  unitName: string | null;
   payment: PaymentStatus | null;
   lease: LeaseStatus | null;
   onView: () => void;
@@ -494,62 +583,21 @@ function TenantCard({
   onSetLeaseEnd: (iso: string) => void | Promise<void>;
 }) {
   return (
-    <div
-      onClick={onView}
-      className={
-        "ui-card p-4 flex flex-col gap-3 cursor-pointer transition hover:bg-[var(--surface-muted)] " +
-        (payment ? STATUS_GLOW[payment] : "")
-      }
-    >
+    <div className={"ui-card p-4 flex flex-col gap-3 " + (payment ? STATUS_GLOW[payment] : "")}>
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-medium truncate" style={{ color: "var(--text-primary)" }}>
-            {tenant.name}
-          </p>
-          <p className="text-xs mt-0.5 truncate" style={{ color: "var(--accent)" }}>
-            {unitLabel ?? "No unit assigned"}
-          </p>
-        </div>
-        <div className="flex gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
-            title="Edit"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="w-7 h-7 rounded inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
-            title="Delete"
-            style={{ color: "var(--danger)" }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6M14 11v6" />
-            </svg>
-          </button>
-        </div>
+        <p className="font-semibold truncate min-w-0" style={{ color: "var(--text-primary)" }}>
+          {tenant.name}
+        </p>
+        <CardMenu onPreview={onView} onEdit={onEdit} onDelete={onDelete} />
       </div>
 
       <dl className="flex flex-col gap-1.5 text-xs">
-        <CardRow label="IC" value={tenant.ic_number} mono />
-        <CardRow label="Email" value={tenant.email} />
-        <CardRow label="Phone" value={tenant.phone} />
-        {tenant.lease_end ? <CardRow label="Lease end" value={tenant.lease_end} /> : null}
+        <CardRow icon={ICONS.property} label="Property" value={propertyName} />
+        <CardRow icon={ICONS.unit} label="Unit" value={unitName} />
+        <CardRow icon={ICONS.ic} label="IC" value={tenant.ic_number} mono />
+        <CardRow icon={ICONS.email} label="Email" value={tenant.email} />
+        <CardRow icon={ICONS.phone} label="Phone" value={tenant.phone} />
+        <CardRow icon={ICONS.lease} label="Lease end" value={tenant.lease_end} />
       </dl>
 
       {/* Footer split 50/50 — Payment status on the left, Lease status on the
@@ -591,34 +639,200 @@ function TenantCard({
   );
 }
 
+/** Compact "[icon] Label : value" row used on the read-only tenant card. The
+ *  leading icon is a quiet visual cue so the record scans cleanly. */
 function CardRow({
+  icon,
   label,
   value,
   mono,
 }: {
+  icon?: React.ReactNode;
   label: string;
   value?: string | null;
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="shrink-0" style={{ color: "var(--text-faint)" }}>{label}</dt>
+    <div className="flex items-center gap-2">
+      <dt className="shrink-0 w-24 flex items-center gap-1.5" style={{ color: "var(--text-faint)" }}>
+        <span className="shrink-0 inline-flex" style={{ color: "var(--text-faint)" }}>
+          {icon}
+        </span>
+        <span>{label}</span>
+        <span aria-hidden>:</span>
+      </dt>
       <dd
-        className={`truncate text-right ${mono ? "font-mono" : ""}`}
-        style={{ color: "var(--text-secondary)" }}
+        className={`truncate min-w-0 flex-1 ${mono ? "font-mono" : ""}`}
+        style={{ color: value ? "var(--text-secondary)" : "var(--text-faint)" }}
       >
-        {value ?? "-"}
+        {value ?? "—"}
       </dd>
     </div>
   );
 }
 
-/** Cogwheel trigger that opens the shared StepDatePicker in a small popover
- *  (mirrors DatePickerField's popover) to edit the lease end date. Click-only
- *  date pick; selecting commits via `onChange` and closes. Closes on outside
- *  click / Esc. Sits at the bottom-right of the Lease status cell; changing the
- *  date reflows the LEASE badge. All clicks are stopped so they don't trigger
- *  the card's open-drawer onClick. */
+/** 13px line icons for the tenant card rows — kept tiny and muted so they read
+ *  as quiet cues, not decoration. */
+const ICONS = {
+  property: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
+    </svg>
+  ),
+  unit: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M15 12h.01" />
+    </svg>
+  ),
+  ic: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" /><circle cx="8" cy="12" r="2" /><path d="M14 10h4M14 14h4" />
+    </svg>
+  ),
+  email: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" />
+    </svg>
+  ),
+  phone: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  ),
+  lease: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+    </svg>
+  ),
+} as const;
+
+/** Single actions dropdown on a tenant card/row: Preview / Edit / Delete (delete
+ *  routes through the shared confirm dialog). The menu renders in a fixed-position
+ *  portal so it's never clipped by a scroll container (e.g. the table's
+ *  overflow-x-auto). Closes on outside click / Esc / scroll. */
+function CardMenu({
+  onPreview,
+  onEdit,
+  onDelete,
+}: {
+  onPreview: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Anchor the portal menu just under the button, right-aligned to it.
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    // A fixed menu can't follow a scroll, so close on scroll/resize.
+    function onScrollResize() {
+      setOpen(false);
+    }
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onScrollResize);
+    window.addEventListener("scroll", onScrollResize, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onScrollResize);
+      window.removeEventListener("scroll", onScrollResize, true);
+    };
+  }, [open]);
+
+  const run = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Tenant actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center border hover:bg-[var(--surface-muted)] transition"
+        style={{ color: open ? "var(--accent)" : "var(--text-muted)", borderColor: "var(--border-soft)" }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="12" cy="19" r="1.6" />
+        </svg>
+      </button>
+      {open && pos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              className="fixed z-[80] w-36 rounded-lg border overflow-hidden"
+              style={{
+                top: pos.top,
+                right: pos.right,
+                background: "var(--surface)",
+                borderColor: "var(--border-soft)",
+                boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MenuItem onClick={run(onPreview)}>Preview</MenuItem>
+              <MenuItem onClick={run(onEdit)}>Edit</MenuItem>
+              <MenuItem danger onClick={run(onDelete)}>Delete</MenuItem>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  );
+}
+
+function MenuItem({
+  children,
+  onClick,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="w-full px-3 py-2 text-left text-xs transition hover:bg-[var(--surface-muted)]"
+      style={{ color: danger ? "var(--danger)" : "var(--text-secondary)" }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Cogwheel trigger that opens the shared StepDatePicker to edit the lease end
+ *  date. Click-only; selecting commits via `onChange` and closes. The calendar
+ *  renders in a fixed-position portal so it's never clipped by a scroll
+ *  container (e.g. the table's overflow-x-auto). Opens upward when there's room,
+ *  else downward. Closes on outside click / Esc / scroll. */
 function LeaseEndPicker({
   value,
   onChange,
@@ -627,31 +841,50 @@ function LeaseEndPicker({
   onChange: (iso: string) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  // Anchor the portal calendar to the button — above it if there's room, else below.
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const POP_H = 340; // approx calendar height
+    const right = Math.max(8, window.innerWidth - r.right);
+    if (r.top > POP_H + 12) setPos({ bottom: window.innerHeight - r.top + 6, right });
+    else setPos({ top: r.bottom + 6, right });
+  };
 
   useEffect(() => {
     if (!open) return;
-    function onClick(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    place();
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
-    window.addEventListener("mousedown", onClick);
+    function onScrollResize() {
+      setOpen(false);
+    }
+    window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onScrollResize);
+    window.addEventListener("scroll", onScrollResize, true);
     return () => {
-      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onScrollResize);
+      window.removeEventListener("scroll", onScrollResize, true);
     };
   }, [open]);
 
   return (
-    <div
-      ref={rootRef}
-      className="relative shrink-0"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <>
       <button
+        ref={btnRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
@@ -661,29 +894,38 @@ function LeaseEndPicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         title="Change lease end date"
-        className="w-11 h-11 shrink-0 rounded-lg inline-flex items-center justify-center border border-[var(--border)] hover:bg-[var(--surface-subtle)]"
-        style={{ color: open ? "var(--accent)" : "var(--text-muted)" }}
+        className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center border hover:bg-[var(--surface-muted)] transition"
+        style={{ color: open ? "var(--accent)" : "var(--text-muted)", borderColor: "var(--border-soft)" }}
       >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
-      {open && (
-        <div
-          className="absolute right-0 bottom-[calc(100%+6px)] z-[70] w-[280px] max-w-[88vw]"
-          style={{ filter: "drop-shadow(0 16px 40px rgba(0,0,0,0.22))" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <StepDatePicker
-            value={value ?? ""}
-            onChange={(iso) => onChange(iso)}
-            granularity="day"
-            onCommit={() => setOpen(false)}
-          />
-        </div>
-      )}
-    </div>
+      {open && pos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={popRef}
+              className="fixed z-[80] w-[280px] max-w-[88vw]"
+              style={{
+                top: pos.top,
+                bottom: pos.bottom,
+                right: pos.right,
+                filter: "drop-shadow(0 16px 40px rgba(0,0,0,0.22))",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <StepDatePicker
+                value={value ?? ""}
+                onChange={(iso) => onChange(iso)}
+                granularity="day"
+                onCommit={() => setOpen(false)}
+              />
+            </div>,
+            document.body
+          )
+        : null}
+    </>
   );
 }
 
@@ -751,85 +993,82 @@ function TenantDetailDrawer({
   );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
-      style={{ background: "rgba(0,0,0,0.5)" }}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl"
-        style={{ background: "var(--surface)", border: "1px solid var(--border-soft)", boxShadow: "0 24px 64px rgba(15,17,22,0.24)", animation: "emsPop 180ms cubic-bezier(.2,.7,.2,1)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex items-start justify-between p-6 border-b sticky top-0 z-10"
-          style={{ borderColor: "var(--border-soft)", background: "var(--surface)" }}
+    <EditModalShell
+      open
+      onClose={onClose}
+      placement="center"
+      widthClass="max-w-5xl"
+      eyebrow="Tenant"
+      title={tenant.name}
+      footer={
+        <footer
+          className="px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 shrink-0"
+          style={{ borderTop: "1px solid var(--border-soft)" }}
         >
-          <div>
-            <p className="text-xs uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-              Tenant
-            </p>
-            <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-              {tenant.name}
-            </h3>
-          </div>
-          <div className="flex gap-2">
-            <button type="button" className="ui-btn" onClick={onEdit}>Edit</button>
-            <button
-              type="button"
-              className="ui-btn"
-              onClick={onDelete}
-              style={{ color: "var(--danger)" }}
-            >
-              Delete
-            </button>
-            <button type="button" className="ui-btn" onClick={onClose}>Close</button>
-          </div>
+          <button
+            type="button"
+            className="ui-btn justify-center sm:mr-auto"
+            onClick={onDelete}
+            style={{ color: "var(--danger)" }}
+          >
+            Delete
+          </button>
+          <button type="button" className="ui-btn justify-center" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" className="ui-btn ui-btn-primary justify-center" onClick={onEdit}>
+            Edit
+          </button>
+        </footer>
+      }
+    >
+      {/* Same inline "Label : value" layout as the Add/Edit form, but read-only. */}
+      <div className="flex flex-col gap-4 text-sm">
+        <Row label="Property">
+          <ReadField value={prop?.name ?? null} />
+        </Row>
+        <Row label="Unit">
+          <ReadField value={unit?.name ?? null} />
+        </Row>
+        <Row label="Full Name">
+          <ReadField value={tenant.name} />
+        </Row>
+        <Row label="IC Number">
+          <ReadField value={tenant.ic_number} mono />
+        </Row>
+        <Row label="Email">
+          <ReadField value={tenant.email} />
+        </Row>
+        <Row label="Phone">
+          <ReadField value={tenant.phone} />
+        </Row>
+        <Row label="Previous Rental Address" align="start">
+          <ReadField value={tenant.previous_address} />
+        </Row>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Row label="Lease Start">
+            <ReadField value={tenant.lease_start} />
+          </Row>
+          <Row label="Lease End">
+            <ReadField value={tenant.lease_end} />
+          </Row>
         </div>
+        <Row label="Notes" align="start">
+          <ReadField value={tenant.notes} />
+        </Row>
 
-        <div className="p-6 flex flex-col gap-6 text-sm">
-          <section>
-            <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--text-faint)" }}>
-              Contact
+        <section className="border-t pt-5 mt-1" style={{ borderColor: "var(--border-soft)" }}>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <p className="text-xs uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+              Payment History
             </p>
-            <dl className="grid grid-cols-2 gap-3">
-              <Field label="IC #" value={tenant.ic_number} mono />
-              <Field label="Email" value={tenant.email} />
-              <Field label="Phone" value={tenant.phone} />
-              <Field label="Current Unit" value={unit ? `${prop?.name ?? ""} - ${unit.name}` : null} />
-              <Field label="Lease Start" value={tenant.lease_start} />
-              <Field label="Lease End" value={tenant.lease_end} />
-            </dl>
-          </section>
-
-          <section>
-            <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--text-faint)" }}>
-              Previous Rental Address
-            </p>
-            <p style={{ color: "var(--text-secondary)" }}>{tenant.previous_address ?? "-"}</p>
-          </section>
-
-          {tenant.notes && (
-            <section>
-              <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--text-faint)" }}>
-                Notes
-              </p>
-              <p style={{ color: "var(--text-secondary)" }}>{tenant.notes}</p>
-            </section>
-          )}
-
-          <section className="border-t pt-5" style={{ borderColor: "var(--border-soft)" }}>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-              <p className="text-xs uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-                Payment History
-              </p>
-              <div className="flex gap-4 text-xs">
-                <span style={{ color: "var(--success)" }}>Paid: {fmt(totalPaid)}</span>
-                <span style={{ color: "var(--danger)" }}>Outstanding: {fmt(totalOutstanding)}</span>
-              </div>
+            <div className="flex gap-4 text-xs">
+              <span style={{ color: "var(--success)" }}>Paid: {fmt(totalPaid)}</span>
+              <span style={{ color: "var(--danger)" }}>Outstanding: {fmt(totalOutstanding)}</span>
             </div>
+          </div>
 
-            {history.length === 0 ? (
+          {history.length === 0 ? (
               <p className="text-sm py-6 text-center" style={{ color: "var(--text-muted)" }}>
                 No payment records for this tenant&apos;s unit yet.
               </p>
@@ -935,28 +1174,25 @@ function TenantDetailDrawer({
                 )}
               </>
             )}
-          </section>
-        </div>
+        </section>
       </div>
-    </div>
+    </EditModalShell>
   );
 }
 
-function Field({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value?: string | null;
-  mono?: boolean;
-}) {
+/** Read-only value box that mirrors the form's input look, so Preview lines up
+ *  field-for-field with Add/Edit. Empty values show a muted em-dash. */
+function ReadField({ value, mono }: { value?: string | null; mono?: boolean }) {
   return (
-    <div>
-      <dt className="text-xs mb-0.5" style={{ color: "var(--text-faint)" }}>{label}</dt>
-      <dd className={mono ? "font-mono text-xs" : ""} style={{ color: "var(--text-primary)" }}>
-        {value ?? "-"}
-      </dd>
+    <div
+      className={`w-full px-3.5 py-2.5 text-sm rounded-[10px] border min-h-[42px] whitespace-pre-wrap break-words ${mono ? "font-mono" : ""}`}
+      style={{
+        background: "var(--surface-muted)",
+        borderColor: "var(--border-soft)",
+        color: value ? "var(--text-primary)" : "var(--text-faint)",
+      }}
+    >
+      {value || "—"}
     </div>
   );
 }
@@ -965,15 +1201,21 @@ function TenantFormDrawer({
   initial,
   properties,
   units,
+  tenants,
   onClose,
   onSubmit,
 }: {
   initial: Tenant | null;
   properties: ReturnType<typeof useRental>["visibleProperties"];
   units: ReturnType<typeof useRental>["units"];
+  tenants: ReturnType<typeof useRental>["tenants"];
   onClose: () => void;
   onSubmit: (input: Omit<Tenant, "id" | "created_at">) => Promise<void>;
 }) {
+  // Lease Start defaults to today for a brand-new tenant; an existing tenant
+  // keeps its saved value. Captured once so the dirty-check baseline matches.
+  const initialLeaseStart = useRef(initial?.lease_start ?? todayISO()).current;
+
   const [name, setName] = useState(initial?.name ?? "");
   const [icNumber, setIcNumber] = useState(initial?.ic_number ?? "");
   const [email, setEmail] = useState(initial?.email ?? "");
@@ -985,8 +1227,10 @@ function TenantFormDrawer({
     const u = units.find((x) => x.id === initial.unit_id);
     return u?.property_id ?? "";
   });
-  const [leaseStart, setLeaseStart] = useState(initial?.lease_start ?? "");
+  const [leaseStart, setLeaseStart] = useState(initialLeaseStart);
   const [leaseEnd, setLeaseEnd] = useState(initial?.lease_end ?? "");
+  const [leaseEndError, setLeaseEndError] = useState(false);
+  const [phoneError, setPhoneError] = useState(false);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -995,9 +1239,34 @@ function TenantFormDrawer({
     ? units.filter((u) => u.property_id === propertyId).sort((a, b) => a.sort_order - b.sort_order)
     : [];
 
+  // Whole-unit properties have one rentable unit, auto-selected on property
+  // choice — so the Unit selector is locked (nothing else to pick).
+  const isWholeProperty =
+    properties.find((p) => p.id === propertyId)?.rental_model === "whole_unit";
+
+  // A unit holds one tenant at a time. Flag when another tenant already occupies
+  // the chosen unit (excluding this tenant's own record while editing).
+  const conflictTenant = unitId
+    ? tenants.find((t) => t.unit_id === unitId && t.id !== initial?.id)
+    : undefined;
+  const unitOccupied = !!conflictTenant;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+    // Phone and Lease End are required — flag any missing ones and block the save.
+    const missingPhone = !phone.trim();
+    const missingLeaseEnd = !leaseEnd;
+    if (missingPhone || missingLeaseEnd) {
+      setPhoneError(missingPhone);
+      setLeaseEndError(missingLeaseEnd);
+      return;
+    }
+    // One tenant per unit — block assigning a unit that's already taken.
+    if (conflictTenant) {
+      setError(`This unit is already occupied by ${conflictTenant.name}. A unit can only hold one tenant at a time.`);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -1026,7 +1295,7 @@ function TenantFormDrawer({
     phone !== (initial?.phone ?? "") ||
     previousAddress !== (initial?.previous_address ?? "") ||
     unitId !== (initial?.unit_id ?? "") ||
-    leaseStart !== (initial?.lease_start ?? "") ||
+    leaseStart !== initialLeaseStart ||
     leaseEnd !== (initial?.lease_end ?? "") ||
     notes !== (initial?.notes ?? "");
 
@@ -1035,116 +1304,206 @@ function TenantFormDrawer({
       open
       onClose={onClose}
       placement="center"
-      widthClass="max-w-3xl"
+      widthClass="max-w-5xl"
       eyebrow={initial ? "Edit tenant" : "New tenant"}
       title={initial ? initial.name : "Add tenant"}
       dirty={dirty}
       saving={saving}
       primaryFormId="tenant-form"
+      primaryDisabled={unitOccupied}
       primaryLabel={initial ? "Save Changes" : "Add Tenant"}
     >
       <form id="tenant-form" onSubmit={handleSubmit} className="flex flex-col gap-4 text-sm">
-          <TextInput label="Full Name *" value={name} onChange={setName} required />
-          <TextInput label="IC Number" value={icNumber} onChange={setIcNumber} placeholder="e.g. 901231-14-5678" />
-          <div className="grid grid-cols-2 gap-3">
-            <TextInput label="Email" value={email} onChange={setEmail} type="email" />
-            <TextInput label="Phone" value={phone} onChange={setPhone} placeholder="e.g. +60 12-345 6789" />
-          </div>
+          {/* Choose property & unit first — drives which room the tenant occupies. */}
+          <Row label="Property">
+            <Select
+              value={propertyId}
+              placeholder="Choose"
+              onChange={(v) => {
+                setPropertyId(v);
+                // A whole-unit property has a single rentable unit — select it
+                // automatically so the user doesn't have to pick from a list of one.
+                const prop = properties.find((p) => p.id === v);
+                const propUnits = v
+                  ? units
+                      .filter((u) => u.property_id === v)
+                      .sort((a, b) => a.sort_order - b.sort_order)
+                  : [];
+                setUnitId(
+                  prop?.rental_model === "whole_unit" && propUnits[0]
+                    ? propUnits[0].id
+                    : ""
+                );
+              }}
+              options={[
+                { value: "", label: "Choose" },
+                ...properties.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
+          </Row>
+          <Row label="Unit">
+            <Select
+              value={unitId}
+              disabled={!propertyId || isWholeProperty}
+              placeholder={propertyId ? "Choose" : "Choose property first"}
+              onChange={setUnitId}
+              options={[
+                { value: "", label: propertyId ? "Choose" : "Choose property first" },
+                ...unitOptions.map((u) => ({ value: u.id, label: u.name })),
+              ]}
+            />
+          </Row>
 
-          <div>
-            <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>
-              Previous Rental Address
-            </label>
+          {unitOccupied && (
+            <div
+              className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+              style={{ background: "rgba(224,162,61,0.10)", border: "1px solid var(--warning)", color: "var(--warning)" }}
+            >
+              <span className="mt-px">&#9888;</span>
+              <span>
+                This unit is already occupied by {conflictTenant?.name}. A unit can only hold one
+                tenant at a time — pick a different unit.
+              </span>
+            </div>
+          )}
+
+          <Row label="Full Name" required>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Full name"
+              required
+              className={fieldCls}
+              style={textareaStyle}
+            />
+          </Row>
+          <Row label="IC Number">
+            <input
+              value={icNumber}
+              onChange={(e) => setIcNumber(e.target.value)}
+              placeholder="e.g. 901231-14-5678"
+              className={fieldCls}
+              style={textareaStyle}
+            />
+          </Row>
+          <Row label="Email">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className={fieldCls}
+              style={textareaStyle}
+            />
+          </Row>
+          <Row label="Phone" required error={phoneError ? "Phone is required." : undefined}>
+            <input
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                setPhoneError(false);
+              }}
+              placeholder="e.g. +60 12-345 6789"
+              required
+              className={fieldCls}
+              style={textareaStyle}
+            />
+          </Row>
+
+          <Row label="Previous Rental Address" align="start">
             <textarea
               value={previousAddress}
               onChange={(e) => setPreviousAddress(e.target.value)}
               rows={2}
-              className="ui-input w-full"
+              placeholder="Previous rental address"
+              className={textareaCls}
+              style={textareaStyle}
             />
-          </div>
+          </Row>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Property</label>
-              <Select
-                value={propertyId}
-                placeholder="- None -"
-                onChange={(v) => {
-                  setPropertyId(v);
-                  setUnitId("");
-                }}
-                options={[
-                  { value: "", label: "- None -" },
-                  ...properties.map((p) => ({ value: p.id, label: p.name })),
-                ]}
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Unit</label>
-              <Select
-                value={unitId}
-                placeholder={propertyId ? "- None -" : "Select a property first"}
-                onChange={setUnitId}
-                options={[
-                  { value: "", label: "- None -" },
-                  ...unitOptions.map((u) => ({ value: u.id, label: u.name })),
-                ]}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Lease Start</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Row label="Lease Start">
               <DatePickerField value={leaseStart} onChange={setLeaseStart} ariaLabel="Lease Start" placeholder="Select date..." />
-            </div>
-            <div>
-              <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Lease End</label>
-              <DatePickerField value={leaseEnd} onChange={setLeaseEnd} ariaLabel="Lease End" placeholder="Select date..." />
-            </div>
+            </Row>
+            <Row
+              label="Lease End"
+              required
+              error={leaseEndError ? "Lease End is required." : undefined}
+            >
+              <DatePickerField
+                value={leaseEnd}
+                onChange={(v) => {
+                  setLeaseEnd(v);
+                  setLeaseEndError(false);
+                }}
+                invalid={leaseEndError}
+                ariaLabel="Lease End"
+                placeholder="Select date..."
+              />
+            </Row>
           </div>
 
-          <div>
-            <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>Notes</label>
+          <Row label="Notes" align="start">
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
-              className="ui-input w-full"
+              placeholder="Notes"
+              className={textareaCls}
+              style={textareaStyle}
             />
-          </div>
+          </Row>
         {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
       </form>
     </EditModalShell>
   );
 }
 
-function TextInput({
+/** Inline "Label : [input]" row — mirrors the Add Property form layout. Stacks
+ *  to a single column on mobile; `align="start"` top-aligns the label for
+ *  multi-line fields (textareas). */
+function Row({
   label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
   required,
+  error,
+  align = "center",
+  labelWidth = "sm:w-44",
+  children,
 }: {
   label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
   required?: boolean;
+  error?: string;
+  align?: "center" | "start";
+  /** Tailwind width class for the label column (e.g. narrower for side-by-side fields). */
+  labelWidth?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className="block text-xs mb-1" style={{ color: "var(--text-faint)" }}>{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        required={required}
-        className="ui-input w-full"
-      />
+    <div
+      className={
+        "flex flex-col gap-1 sm:flex-row sm:gap-3 " +
+        (align === "start" ? "sm:items-start" : "sm:items-center")
+      }
+    >
+      <label
+        className={
+          `shrink-0 ${labelWidth} flex items-center gap-1 text-sm font-medium ` +
+          (align === "start" ? "sm:pt-2.5" : "")
+        }
+        style={{ color: "var(--text-secondary)" }}
+      >
+        <span>{label}</span>
+        {required ? <span style={{ color: "var(--accent)" }}>*</span> : null}
+        <span aria-hidden>:</span>
+      </label>
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        {children}
+        {error ? (
+          <p className="text-xs" style={{ color: "var(--danger)" }}>
+            {error}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

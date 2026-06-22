@@ -134,7 +134,7 @@ export function EditModalShell({
       <aside role="dialog" aria-modal="true" aria-label={title} className={panelClass} style={panelStyle}>
         {/* Header */}
         <header
-          className="px-6 py-5 flex items-start justify-between gap-4 shrink-0"
+          className="px-4 sm:px-6 py-4 sm:py-5 flex items-start justify-between gap-3 sm:gap-4 shrink-0"
           style={{ borderBottom: "1px solid var(--border-soft)" }}
         >
           <div className="min-w-0">
@@ -165,24 +165,29 @@ export function EditModalShell({
         </header>
 
         {/* Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">{children}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 sm:py-5">{children}</div>
 
         {/* Footer */}
         {footer !== undefined ? (
           footer
         ) : (
           <footer
-            className="px-6 py-4 flex items-center justify-end gap-2 shrink-0"
+            className="px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 shrink-0"
             style={{ borderTop: "1px solid var(--border-soft)" }}
           >
-            <button type="button" className="ui-btn" onClick={requestClose} disabled={saving}>
+            <button
+              type="button"
+              className="ui-btn justify-center"
+              onClick={requestClose}
+              disabled={saving}
+            >
               {secondaryLabel ?? (dirty ? "Discard" : "Close")}
             </button>
             {primaryFormId ? (
               <button
                 type="submit"
                 form={primaryFormId}
-                className="ui-btn ui-btn-primary"
+                className="ui-btn ui-btn-primary justify-center"
                 disabled={saving || primaryDisabled}
               >
                 {saving ? "Saving…" : primaryLabel}
@@ -190,7 +195,7 @@ export function EditModalShell({
             ) : (
               <button
                 type="button"
-                className="ui-btn ui-btn-primary"
+                className="ui-btn ui-btn-primary justify-center"
                 onClick={onPrimary}
                 disabled={saving || primaryDisabled}
               >

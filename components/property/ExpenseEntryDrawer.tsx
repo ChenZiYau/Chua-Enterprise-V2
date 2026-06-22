@@ -11,7 +11,7 @@ import {
   type ExpenseCategory,
 } from "@/types/rental";
 
-type View = "normal" | "expanded" | "minimized";
+type View = "normal" | "expanded";
 
 type Item = {
   key: string;
@@ -120,15 +120,15 @@ export function ExpenseEntryDrawer({
     else onClose();
   }, [dirty, onClose]);
 
-  // Lock scroll while open and not minimized.
+  // Lock scroll while open.
   useEffect(() => {
-    if (!open || view === "minimized") return;
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open, view]);
+  }, [open]);
 
   // Escape: close confirm first, then the drawer.
   useEffect(() => {
@@ -136,11 +136,11 @@ export function ExpenseEntryDrawer({
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       if (confirmOpen) setConfirmOpen(false);
-      else if (view !== "minimized") attemptClose();
+      else attemptClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, confirmOpen, view, attemptClose]);
+  }, [open, confirmOpen, attemptClose]);
 
   function updateItem(key: string, patch: Partial<Item>) {
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
@@ -186,40 +186,6 @@ export function ExpenseEntryDrawer({
 
   if (!open) return null;
 
-  // -- Minimized floating bar --
-  if (view === "minimized") {
-    return (
-      <div
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl px-4 py-3"
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border-soft)",
-          boxShadow: "0 8px 32px rgba(15,17,22,0.16)",
-          animation: "exSlideUp 200ms cubic-bezier(.2,.7,.2,1)",
-          maxWidth: "min(92vw, 340px)",
-        }}
-      >
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-            Adding expenses{dirty ? " - unsaved" : ""}
-          </p>
-          <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-            {activePropertyName}
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button type="button" onClick={() => setView("normal")} className="ui-btn" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}>
-            Restore
-          </button>
-        </div>
-        {confirmOpen && (
-          <ConfirmDialog canSave={canSave} onSave={handleSave} onDiscard={() => { setConfirmOpen(false); onClose(); }} onCancel={() => setConfirmOpen(false)} />
-        )}
-        <Keyframes />
-      </div>
-    );
-  }
-
   const widthClass = view === "expanded" ? "max-w-5xl" : "max-w-3xl";
   const ytd = activePropertyId ? getPropertyYTD(activePropertyId, year) : { revenue: 0, expenses: 0, net: 0 };
   const yearExpenses = activePropertyId ? getExpensesForProperty(activePropertyId, year) : [];
@@ -247,7 +213,6 @@ export function ExpenseEntryDrawer({
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <IconBtn label="Minimize" onClick={() => setView("minimized")}><MinimizeIcon /></IconBtn>
             <IconBtn label={view === "expanded" ? "Collapse" : "Expand"} onClick={() => setView(view === "expanded" ? "normal" : "expanded")}>
               {view === "expanded" ? <CollapseIcon /> : <ExpandIcon />}
             </IconBtn>
@@ -456,9 +421,6 @@ function CloseIcon({ size = 14 }: { size?: number }) {
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   );
-}
-function MinimizeIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /></svg>;
 }
 function ExpandIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>;

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRental } from "@/context/RentalContext";
 import {
+  MONTHS,
   MONTHS_FULL,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
@@ -22,6 +23,26 @@ const labelStyle: React.CSSProperties = { color: "var(--text-faint)" };
 
 function fmt(v: number) {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR", minimumFractionDigits: 2 }).format(v);
+}
+
+/** The most recent saved electricity meter reading for a unit, strictly before
+ *  the given billing period — i.e. "last month's" reading. Null when the unit
+ *  has no earlier reading (this entry sets the baseline). */
+function previousReading(
+  revenueEntries: ReturnType<typeof useRental>["revenueEntries"],
+  unitId: string,
+  year: number,
+  month: number
+): number | null {
+  const prior = revenueEntries
+    .filter(
+      (e) =>
+        e.unit_id === unitId &&
+        e.electricity_units != null &&
+        (e.year < year || (e.year === year && e.month < month))
+    )
+    .sort((a, b) => b.year - a.year || b.month - a.month);
+  return prior.length ? (prior[0].electricity_units ?? null) : null;
 }
 
 /**
@@ -53,7 +74,7 @@ export function RevenueEntryForm({
   /** Optional selectors (property / room) rendered atop the right column. */
   contextSlot?: React.ReactNode;
 }) {
-  const { getUnit, getRevenueEntry, addRevenueEntry, updateRevenueEntry } = useRental();
+  const { getUnit, getRevenueEntry, addRevenueEntry, updateRevenueEntry, revenueEntries } = useRental();
 
   const [saved, setSaved] = useState(false);
   const [notesFocused, setNotesFocused] = useState(false);
@@ -151,9 +172,16 @@ export function RevenueEntryForm({
     onDirtyChange(current !== baselineRef.current);
   }, [rental, elecUnits, otherCharges, payDate, payMethod, customPayMethod, payStatus, notes, prorate, startDate, onDirtyChange]);
 
-  const elecUnitsNum = parseFloat(elecUnits) || 0;
+  // Electricity is entered as the current meter reading. Usage for the month is
+  // (this reading − last month's reading); the charge applies the free
+  // allowance + TNB tiers to that usage. The first-ever reading sets a baseline
+  // (no usage to bill yet). The reading itself is saved so it becomes the
+  // "last month" value for the next entry.
+  const reading = parseFloat(elecUnits) || 0;
   const freeUnits = unit?.electricity_free_units ?? 0;
-  const elecBill = elecUnitsNum > 0 ? calculateElectricityCharge(elecUnitsNum, freeUnits) : null;
+  const prevReading = previousReading(revenueEntries, unitId, year, month);
+  const elecUsage = reading > 0 && prevReading != null ? Math.max(0, reading - prevReading) : 0;
+  const elecBill = reading > 0 && prevReading != null ? calculateElectricityCharge(elecUsage, freeUnits) : null;
   const elecAmount = elecBill?.chargeAmount ?? 0;
   const rentalNum = parseFloat(rental) || 0;
   const otherNum = parseFloat(otherCharges) || 0;
@@ -186,7 +214,9 @@ export function RevenueEntryForm({
     const input = {
       property_id: propertyId, unit_id: unitId, year, month,
       rental_amount: effectiveRental,
-      electricity_units: elecUnitsNum || null,
+      // Persist the meter reading (not the usage) so it becomes next month's
+      // "last month" reading for the delta calculation.
+      electricity_units: reading || null,
       electricity_amount: elecAmount || null,
       other_charges_amount: otherNum || null,
       total_amount: totalAmount,
@@ -238,46 +268,47 @@ export function RevenueEntryForm({
   ) : null;
 
   const chargesSection = (
-    <div className="flex flex-col gap-3">
-      <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>Charges</p>
-      <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-[10px] font-semibold uppercase tracking-[0.14em]" style={labelStyle}>
-              {prorate ? "Full monthly rent (RM)" : "Rental (RM)"}
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Prorate for a mid-month move-in">
-              <input type="checkbox" checked={prorate}
-                onChange={(e) => { setProrate(e.target.checked); if (saved) setSaved(false); }}
-                style={{ accentColor: "var(--accent)", width: 13, height: 13 }} />
-              <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>Prorate (mid-month start)</span>
-            </label>
-          </div>
-          <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls}
-            style={errors.rental ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
-            value={rental} onChange={onText(setRental)} />
-          {errors.rental && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.rental}</p>}
-        </div>
-        <div>
-          <label className={labelCls} style={labelStyle}>Other charges (RM)</label>
-          <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls} style={inputStyle}
-            value={otherCharges} onChange={onText(setOtherCharges)} />
-        </div>
+    <div className="flex flex-col gap-4">
+      {/* Base Rent — amount defaults to the unit's base rent */}
+      <div>
+        <label className={labelCls} style={labelStyle}>
+          {prorate ? "Base rent — full month (RM)" : "Base Rent (RM)"}
+        </label>
+        <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls}
+          style={errors.rental ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
+          value={rental} onChange={onText(setRental)} />
+        {errors.rental && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.rental}</p>}
+        <label className="flex items-center gap-1.5 mt-2 cursor-pointer select-none" title="Prorate for a mid-month move-in">
+          <input type="checkbox" checked={prorate}
+            onChange={(e) => { setProrate(e.target.checked); if (saved) setSaved(false); }}
+            style={{ accentColor: "var(--accent)", width: 14, height: 14 }} />
+          <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Prorate (mid-month start)</span>
+        </label>
       </div>
 
       {prorate && (
         <div className="rounded-lg px-3 py-3 flex flex-col gap-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
-          <div>
-            <label className={labelCls} style={labelStyle}>Tenant start date</label>
-            <DatePickerField
-              value={startDate}
-              onChange={(v) => { setStartDate(v); if (saved) setSaved(false); }}
-              min={`${year}-${monthStr}-01`}
-              max={`${year}-${monthStr}-${String(dim).padStart(2, "0")}`}
-              invalid={!!errors.startDate}
-              ariaLabel="Tenant start date"
-            />
-            {errors.startDate && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.startDate}</p>}
+          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls} style={labelStyle}>Start date</label>
+              <DatePickerField
+                value={startDate}
+                onChange={(v) => { setStartDate(v); if (saved) setSaved(false); }}
+                min={`${year}-${monthStr}-01`}
+                max={`${year}-${monthStr}-${String(dim).padStart(2, "0")}`}
+                invalid={!!errors.startDate}
+                ariaLabel="Tenant start date"
+              />
+              {errors.startDate && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.startDate}</p>}
+            </div>
+            <div>
+              <label className={labelCls} style={labelStyle}>End date</label>
+              <div className={`${inputCls} flex items-center cursor-not-allowed`}
+                style={{ ...inputStyle, background: "var(--surface-subtle)", color: "var(--text-muted)" }}
+                title="Rent is charged through the end of the billing month">
+                {`${String(dim).padStart(2, "0")} ${MONTHS[month - 1]} ${year}`}
+              </div>
+            </div>
           </div>
           {proration && (
             <div className="text-xs flex flex-col gap-0.5" style={{ color: "var(--text-muted)" }}>
@@ -290,18 +321,40 @@ export function RevenueEntryForm({
           )}
         </div>
       )}
+      {/* Electricity Usage — meter reading; math calculation shown below */}
       <div>
-        <label className={labelCls} style={labelStyle}>Electricity usage (kWh)</label>
-        <input type="number" inputMode="decimal" min={0} step="1" placeholder="e.g. 120" className={inputCls} style={inputStyle}
+        <label className={labelCls} style={labelStyle}>Electricity Usage (kWh)</label>
+        <input type="number" inputMode="decimal" min={0} step="1" placeholder="e.g. 3800" className={inputCls} style={inputStyle}
           value={elecUnits} onChange={onText(setElecUnits)} />
-        {elecBill ? (
+        {reading > 0 && prevReading != null && elecBill ? (
           <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-            {elecBill.unitsUsed} - {elecBill.freeUnits} free = {elecBill.chargeableUnits} kWh &#8594; <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
+            {reading} − {prevReading} (last month) = {elecUsage} kWh − {freeUnits} free = {elecBill.chargeableUnits} kWh &#8594; <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
           </p>
-        ) : freeUnits > 0 ? (
-          <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>{freeUnits} kWh free. Enter a reading to auto-calculate the charge.</p>
-        ) : null}
+        ) : reading > 0 && prevReading == null ? (
+          <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
+            First reading for this room — saved as the baseline. The charge starts from next month&apos;s reading.
+          </p>
+        ) : (
+          <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
+            Enter this month&apos;s meter reading{prevReading != null ? ` (last month: ${prevReading})` : ""}. Last month and {freeUnits} free kWh are subtracted automatically.
+          </p>
+        )}
       </div>
+
+      {/* Other Charges — amount defaults to zero */}
+      <div>
+        <label className={labelCls} style={labelStyle}>Other Charges (RM)</label>
+        <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls} style={inputStyle}
+          value={otherCharges} onChange={onText(setOtherCharges)} />
+      </div>
+    </div>
+  );
+
+  // Inline total row (image: "Total month revenue: <total>"), sits in the right column.
+  const totalRow = (
+    <div className="flex items-center justify-between rounded-lg px-3 py-2.5" style={{ background: "var(--surface-muted)", border: "1px solid var(--border-soft)" }}>
+      <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Total month revenue</span>
+      <span className="text-xl font-bold tabular-nums" style={{ color: "var(--accent)" }}>{fmt(totalAmount)}</span>
     </div>
   );
 
@@ -371,12 +424,6 @@ export function RevenueEntryForm({
     </>
   );
 
-  const totalDisplay = (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>Total</span>
-      <span className="text-xl font-bold tabular-nums leading-tight" style={{ color: "var(--accent)" }}>{fmt(totalAmount)}</span>
-    </div>
-  );
   const actionButtons = (
     <>
       <button type="button" className="ui-btn justify-center" disabled={saving} onClick={() => handleSave(false)}>
@@ -393,21 +440,14 @@ export function RevenueEntryForm({
     return (
       <div className="flex flex-col flex-1 min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] flex-1 min-h-0">
-          {/* LEFT — date picker + payment (scrolls if it exceeds height) */}
-          <div className="flex flex-col gap-3 px-5 py-4 lg:border-r overflow-y-auto min-h-0" style={{ borderColor: "var(--border-soft)" }}>
+          {/* LEFT — Revenue/Expense box + Billing month box (two detached cards).
+              No scroll: the content is sized to fit the panel. */}
+          <div className="flex flex-col gap-3 px-5 py-4 lg:border-r min-h-0 overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ borderColor: "var(--border-soft)" }}>
             {datePanel}
-            {unitStat}
-            <div className="flex flex-col gap-3">
-              <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>Payment</p>
-              {paymentDateField}
-              {statusField}
-              {methodField}
-              {customMethodField}
-            </div>
           </div>
 
-          {/* RIGHT — charges (only this body scrolls) */}
-          <div className="@container flex flex-col gap-3 px-5 py-4 overflow-y-auto min-h-0">
+          {/* RIGHT — room tabs (room rental) + charges (only this scrolls) */}
+          <div className="@container flex flex-col gap-4 px-5 py-4 overflow-y-auto min-h-0">
             {contextSlot}
             {existingWarning}
             {chargesSection}
@@ -415,13 +455,11 @@ export function RevenueEntryForm({
           </div>
         </div>
 
-        {/* STICKY FOOTER — total + actions, always visible */}
+        {/* STICKY FOOTER — total month revenue + Save actions, always visible */}
         <div className="px-5 py-3 flex flex-col gap-2.5 shrink-0 sticky bottom-0 z-10" style={{ borderTop: "1px solid var(--border-soft)", background: "var(--surface)" }}>
           {banners}
-          <div className="flex items-center justify-between gap-4">
-            {totalDisplay}
-            <div className="flex gap-2">{actionButtons}</div>
-          </div>
+          {totalRow}
+          <div className="flex items-center justify-end gap-2">{actionButtons}</div>
         </div>
       </div>
     );

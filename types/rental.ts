@@ -161,6 +161,9 @@ export interface ExpenseEntry {
   description?: string | null;
   is_recurring?: boolean;
   is_irregular?: boolean;
+  /** Whether the underlying issue/maintenance has been fixed/resolved. Drives
+   *  the green (all fixed) vs yellow (outstanding) expense-month colouring. */
+  is_fixed?: boolean;
   created_at: string;
 }
 

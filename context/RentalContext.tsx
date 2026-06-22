@@ -214,7 +214,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       year: number; month: number; expenseDate: string;
       category: string; customCategory: string;
       amount: number; description: string;
-      isRecurring: boolean; isIrregular: boolean;
+      isRecurring: boolean; isIrregular: boolean; isFixed: boolean;
     };
     type NPTenant = {
       id: string; name: string; icNumber: string; email: string; phone: string;
@@ -328,6 +328,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           description: e.description || null,
           is_recurring: !!e.isRecurring,
           is_irregular: !!e.isIrregular,
+          is_fixed: !!e.isFixed,
           created_at: nowIso,
         }));
 
