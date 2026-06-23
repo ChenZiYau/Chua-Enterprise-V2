@@ -123,7 +123,7 @@ export function ExpenseEntryForm({
       setItems([newItem()]);
       onSaved?.();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Could not save expenses to Notion.");
+      setSaveError(err instanceof Error ? err.message : "Could not save expenses to the database.");
     } finally {
       setSaving(false);
     }

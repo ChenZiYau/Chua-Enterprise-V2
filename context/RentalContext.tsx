@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { notionCreate, notionUpdate, notionDelete, isNotionId } from "@/lib/notionClient";
+import { dbCreate, dbUpdate, dbDelete, isPersistedId } from "@/lib/dbClient";
 import {
   revenueCreateFields,
   revenuePatchFields,
@@ -21,7 +21,7 @@ import {
   propertyPatchFields,
   unitCreateFields,
   unitPatchFields,
-} from "@/lib/notionSync";
+} from "@/lib/dbSync";
 import type {
   Property,
   Unit,
@@ -37,6 +37,7 @@ import type {
   MaintenanceEntry,
   MaintenanceStatus,
   MaintenancePriority,
+  RoomInput,
 } from "@/types/rental";
 type PropertyInput = Omit<Property, "id" | "slug"> & {
   id?: string;
@@ -48,19 +49,19 @@ type ExpenseInput = Omit<ExpenseEntry, "id" | "created_at">;
 type TenantInput = Omit<Tenant, "id" | "created_at"> & { id?: string };
 
 interface RentalContextValue {
-  notionLoadError: string | null;
+  loadError: string | null;
   // -- Properties ---------------------------------------------------
   properties: Property[];
   visibleProperties: Property[];
   getProperty: (id: string) => Property | undefined;
-  createProperty: (input: PropertyInput) => Promise<Property>;
-  updateProperty: (id: string, patch: Partial<Property>) => Promise<Property | undefined>;
+  createProperty: (input: PropertyInput, rooms?: RoomInput[]) => Promise<Property>;
+  updateProperty: (id: string, patch: Partial<Property>, rooms?: RoomInput[]) => Promise<Property | undefined>;
   softDeleteProperty: (id: string) => Promise<void>;
-  /** Update a property's cover URL in local state only (no Notion write). Used
+  /** Update a property's cover URL in local state only (no database write). Used
    *  after an uploaded cover so the fresh signed URL shows immediately without
    *  persisting an expiring URL — the page cover is re-read fresh on reload. */
   setPropertyCoverLocal: (id: string, url: string) => void;
-  /** Update a property's gallery URLs in local state only (no Notion write).
+  /** Update a property's gallery URLs in local state only (no database write).
    *  Used after uploaded gallery images so they show immediately; the "Gallery"
    *  files property is re-read fresh on reload. */
   setPropertyGalleryLocal: (id: string, galleryUrls: string) => void;
@@ -144,10 +145,10 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [maintenanceEntries, setMaintenanceEntries] = useState<MaintenanceEntry[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const [notionLoadError, setNotionLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Latest properties/units in refs so the (stable) CRUD callbacks can resolve
-  // property/unit names when syncing to Notion without re-creating themselves.
+  // property/unit names when syncing to Supabase without re-creating themselves.
   const propsRef = useRef(properties);
   propsRef.current = properties;
   const unitsRef = useRef(units);
@@ -175,12 +176,12 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     return u ? propNameById(u.property_id) : "";
   }, [propNameById]);
 
-  // -- Mark client hydration before loading Notion --------------------
+  // -- Mark client hydration before loading from Supabase --------------------
   useEffect(() => {
     setHydrated(true);
   }, []);
 
-  // -- Hydrate from Notion (source of truth) -------------------------
+  // -- Hydrate from Supabase (source of truth) -------------------------
   useEffect(() => {
     if (!hydrated) return;
     let cancelled = false;
@@ -198,7 +199,9 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     type NPUnit = {
       id: string; name: string; property: string; label: string;
       sortOrder: number; isRented: boolean; tenantName: string;
-      rentalRate: number; electricityFreeUnits: number; galleryUrls: string; shareUrl: string;
+      rentalRate: number; electricityFreeUnits: number;
+      depositMonths: number; depositAmount: number;
+      galleryUrls: string; shareUrl: string;
     };
     type NPRevenue = {
       id: string; name: string; property: string; unit: string;
@@ -237,15 +240,15 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const [pData, uData, rData, eData, tData, mData] = await Promise.all([
-          loadJson<NPProperty>("/api/notion/properties"),
-          loadJson<NPUnit>("/api/notion/units"),
-          loadJson<NPRevenue>("/api/notion/revenue"),
-          loadJson<NPExpense>("/api/notion/expenses"),
-          loadJson<NPTenant>("/api/notion/tenants"),
-          loadJson<NPMaintenance>("/api/notion/maintenance"),
+          loadJson<NPProperty>("/api/db/properties"),
+          loadJson<NPUnit>("/api/db/units"),
+          loadJson<NPRevenue>("/api/db/revenue"),
+          loadJson<NPExpense>("/api/db/expenses"),
+          loadJson<NPTenant>("/api/db/tenants"),
+          loadJson<NPMaintenance>("/api/db/maintenance"),
         ]);
         if (cancelled) return;
-        setNotionLoadError(null);
+        setLoadError(null);
 
         const props: Property[] = pData.map((p) => ({
           id: p.id,
@@ -282,6 +285,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           tenant_name: u.tenantName || null,
           rental_rate: u.rentalRate || 0,
           electricity_free_units: u.electricityFreeUnits || 0,
+          deposit_months: u.depositMonths || null,
+          deposit_amount: u.depositAmount || null,
           gallery_urls: u.galleryUrls || null,
           share_url: u.shareUrl || null,
         }));
@@ -369,8 +374,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
         setTenants(tens);
         setMaintenanceEntries(maint);
       } catch (err) {
-        setNotionLoadError(err instanceof Error ? err.message : String(err));
-        console.warn("Notion hydration failed", err);
+        setLoadError(err instanceof Error ? err.message : String(err));
+        console.warn("Database hydration failed", err);
       }
     })();
 
@@ -380,51 +385,153 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
   }, [hydrated]);
 
   // -- Property CRUD --------------------------------------------------
-  const createProperty = useCallback(async (input: PropertyInput): Promise<Property> => {
+  const createProperty = useCallback(async (input: PropertyInput, rooms?: RoomInput[]): Promise<Property> => {
     const id = input.id ?? generateId("prop");
     const slug = input.slug ?? (slugify(input.name) || id);
+    // When explicit rooms are provided, the property's capacity follows them.
+    const useRooms = !!rooms && rooms.length > 0;
     const draft: Property = {
       ...input,
       id,
       slug,
+      total_units: useRooms ? rooms!.length : input.total_units,
+      rented_units: useRooms
+        ? rooms!.filter((r) => (r.tenant_name ?? "").trim() !== "").length
+        : input.rented_units,
       deleted_at: input.deleted_at ?? null,
       delete_expires_at: input.delete_expires_at ?? null,
     };
-    const realId = await notionCreate("properties", propertyCreateFields(draft));
+    const realId = await dbCreate("properties", propertyCreateFields(draft));
     const next = { ...draft, id: realId };
-    const unitCount = Math.max(1, next.total_units || 1);
     const createdUnits: Unit[] = [];
-    for (let i = 0; i < unitCount; i += 1) {
-      const label = next.rental_model === "whole_unit" ? "Unit" : `Room ${i + 1}`;
-      const unitDraft: Unit = {
-        id: generateId("unit"),
-        property_id: realId,
-        name: label,
-        label,
-        sort_order: i + 1,
-        is_rented: false,
-        tenant_name: null,
-        rental_rate: null,
-        electricity_free_units: 0,
-      };
-      const unitId = await notionCreate("units", unitCreateFields(unitDraft, { property: next.name }));
-      createdUnits.push({ ...unitDraft, id: unitId });
+    if (useRooms) {
+      for (let i = 0; i < rooms!.length; i += 1) {
+        const r = rooms![i];
+        const label = next.rental_model === "whole_unit" ? "Unit" : `Room ${i + 1}`;
+        const tenant = (r.tenant_name ?? "").trim() || null;
+        const unitDraft: Unit = {
+          id: generateId("unit"),
+          property_id: realId,
+          name: r.name.trim() || label,
+          label,
+          sort_order: i + 1,
+          is_rented: !!tenant,
+          tenant_name: tenant,
+          rental_rate: r.rental_rate ?? null,
+          electricity_free_units: 0,
+        };
+        const unitId = await dbCreate("units", unitCreateFields(unitDraft, { property: next.name }));
+        createdUnits.push({ ...unitDraft, id: unitId });
+      }
+    } else {
+      const unitCount = Math.max(1, next.total_units || 1);
+      for (let i = 0; i < unitCount; i += 1) {
+        const label = next.rental_model === "whole_unit" ? "Unit" : `Room ${i + 1}`;
+        const unitDraft: Unit = {
+          id: generateId("unit"),
+          property_id: realId,
+          name: label,
+          label,
+          sort_order: i + 1,
+          is_rented: false,
+          tenant_name: null,
+          rental_rate: null,
+          electricity_free_units: 0,
+        };
+        const unitId = await dbCreate("units", unitCreateFields(unitDraft, { property: next.name }));
+        createdUnits.push({ ...unitDraft, id: unitId });
+      }
     }
     setProperties((prev) => [next, ...prev]);
     setUnits((prev) => [...prev, ...createdUnits]);
     return next;
   }, []);
 
-  const updateProperty = useCallback(async (id: string, patch: Partial<Property>) => {
+  const updateProperty = useCallback(async (id: string, patch: Partial<Property>, rooms?: RoomInput[]) => {
     const current = propsRef.current.find((p) => p.id === id);
     if (!current) return undefined;
-    const updated = { ...current, ...patch };
-    if (isNotionId(id)) {
-      await notionUpdate("properties", id, propertyPatchFields(patch));
-    }
     const currentUnits = unitsRef.current
       .filter((unit) => unit.property_id === id)
       .sort((a, b) => a.sort_order - b.sort_order);
+
+    // ---- Explicit room management (from the property edit form) ----
+    if (rooms) {
+      const keptIds = new Set(rooms.filter((r) => r.id).map((r) => r.id as string));
+      const removed = currentUnits.filter((u) => !keptIds.has(u.id));
+
+      const updatedCapacity: Partial<Property> = {
+        ...patch,
+        total_units: rooms.length,
+        rented_units: rooms.filter((r) => (r.tenant_name ?? "").trim() !== "").length,
+      };
+      const updated = { ...current, ...updatedCapacity };
+      const propertyName = updated.name;
+
+      if (isPersistedId(id)) {
+        await dbUpdate("properties", id, propertyPatchFields(updatedCapacity));
+      }
+
+      const nextUnits: Unit[] = [];
+      for (let i = 0; i < rooms.length; i += 1) {
+        const r = rooms[i];
+        const label = updated.rental_model === "whole_unit" ? "Unit" : `Room ${i + 1}`;
+        const tenant = (r.tenant_name ?? "").trim() || null;
+        const existing = r.id ? currentUnits.find((u) => u.id === r.id) : undefined;
+        if (existing) {
+          const merged: Unit = {
+            ...existing,
+            name: r.name.trim() || existing.name,
+            sort_order: i + 1,
+            is_rented: !!tenant,
+            tenant_name: tenant,
+            rental_rate: r.rental_rate ?? null,
+          };
+          if (isPersistedId(existing.id)) {
+            await dbUpdate(
+              "units",
+              existing.id,
+              unitPatchFields(
+                {
+                  name: merged.name,
+                  sort_order: merged.sort_order,
+                  is_rented: merged.is_rented,
+                  tenant_name: merged.tenant_name,
+                  rental_rate: merged.rental_rate,
+                },
+                { property: propertyName }
+              )
+            );
+          }
+          nextUnits.push(merged);
+        } else {
+          const unitDraft: Unit = {
+            id: generateId("unit"),
+            property_id: id,
+            name: r.name.trim() || label,
+            label,
+            sort_order: i + 1,
+            is_rented: !!tenant,
+            tenant_name: tenant,
+            rental_rate: r.rental_rate ?? null,
+            electricity_free_units: 0,
+          };
+          const unitId = await dbCreate("units", unitCreateFields(unitDraft, { property: propertyName }));
+          nextUnits.push({ ...unitDraft, id: unitId });
+        }
+      }
+      for (const unit of removed) {
+        if (isPersistedId(unit.id)) await dbDelete("units", unit.id);
+      }
+      setProperties((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      setUnits((prev) => [...prev.filter((u) => u.property_id !== id), ...nextUnits]);
+      return updated;
+    }
+
+    // ---- Legacy count-based unit management (no explicit rooms) ----
+    const updated = { ...current, ...patch };
+    if (isPersistedId(id)) {
+      await dbUpdate("properties", id, propertyPatchFields(patch));
+    }
     const targetUnits = Math.max(1, updated.total_units || 1);
     const createdUnits: Unit[] = [];
     if (targetUnits > currentUnits.length) {
@@ -441,19 +548,19 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
           rental_rate: null,
           electricity_free_units: 0,
         };
-        const unitId = await notionCreate("units", unitCreateFields(unitDraft, { property: updated.name }));
+        const unitId = await dbCreate("units", unitCreateFields(unitDraft, { property: updated.name }));
         createdUnits.push({ ...unitDraft, id: unitId });
       }
     }
     const removedUnitIds = targetUnits < currentUnits.length ? currentUnits.slice(targetUnits).map((unit) => unit.id) : [];
     for (const unitId of removedUnitIds) {
-      if (isNotionId(unitId)) await notionDelete("units", unitId);
+      if (isPersistedId(unitId)) await dbDelete("units", unitId);
     }
     if (patch.name) {
       await Promise.all(
         currentUnits
-          .filter((unit) => !removedUnitIds.includes(unit.id) && isNotionId(unit.id))
-          .map((unit) => notionUpdate("units", unit.id, unitPatchFields({ property_id: id }, { property: updated.name })))
+          .filter((unit) => !removedUnitIds.includes(unit.id) && isPersistedId(unit.id))
+          .map((unit) => dbUpdate("units", unit.id, unitPatchFields({ property_id: id }, { property: updated.name })))
       );
     }
     setProperties((prev) =>
@@ -476,10 +583,10 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
 
   const softDeleteProperty = useCallback(async (id: string) => {
     const unitIds = unitsRef.current.filter((unit) => unit.property_id === id).map((unit) => unit.id);
-    if (isNotionId(id)) {
-      await notionDelete("properties", id);
+    if (isPersistedId(id)) {
+      await dbDelete("properties", id);
     }
-    await Promise.all(unitIds.filter(isNotionId).map((unitId) => notionDelete("units", unitId)));
+    await Promise.all(unitIds.filter(isPersistedId).map((unitId) => dbDelete("units", unitId)));
     setProperties((prev) => prev.filter((p) => p.id !== id));
     setUnits((prev) => prev.filter((unit) => unit.property_id !== id));
   }, []);
@@ -489,8 +596,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     const current = unitsRef.current.find((u) => u.id === id);
     if (!current) return;
     const updated = { ...current, ...patch };
-    if (isNotionId(id)) {
-      await notionUpdate(
+    if (isPersistedId(id)) {
+      await dbUpdate(
         "units",
         id,
         unitPatchFields(patch, { property: propNameById(patch.property_id ?? current.property_id) })
@@ -508,7 +615,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       id: generateId("rev"),
       created_at: new Date().toISOString(),
     };
-    const realId = await notionCreate(
+    const realId = await dbCreate(
       "revenue",
       revenueCreateFields(draft, {
         property: propNameById(draft.property_id),
@@ -529,8 +636,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     const current = revenueEntriesRef.current.find((e) => e.id === id);
     if (!current) return;
     const updated = { ...current, ...patch };
-    if (isNotionId(id)) {
-      await notionUpdate(
+    if (isPersistedId(id)) {
+      await dbUpdate(
         "revenue",
         id,
         revenuePatchFields(patch, {
@@ -545,8 +652,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
   }, [propNameById, unitNameById]);
 
   const deleteRevenueEntry = useCallback(async (id: string) => {
-    if (isNotionId(id)) {
-      await notionDelete("revenue", id);
+    if (isPersistedId(id)) {
+      await dbDelete("revenue", id);
     }
     setRevenueEntries((prev) => prev.filter((e) => e.id !== id));
   }, []);
@@ -558,7 +665,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       id: generateId("exp"),
       created_at: new Date().toISOString(),
     };
-    const realId = await notionCreate(
+    const realId = await dbCreate(
       "expenses",
       expenseCreateFields(draft, { property: propNameById(draft.property_id), unit: unitNameById(draft.unit_id) })
     );
@@ -571,8 +678,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     const current = expenseEntriesRef.current.find((e) => e.id === id);
     if (!current) return;
     const updated = { ...current, ...patch };
-    if (isNotionId(id)) {
-      await notionUpdate(
+    if (isPersistedId(id)) {
+      await dbUpdate(
         "expenses",
         id,
         expensePatchFields(patch, {
@@ -587,8 +694,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
   }, [propNameById, unitNameById]);
 
   const deleteExpenseEntry = useCallback(async (id: string) => {
-    if (isNotionId(id)) {
-      await notionDelete("expenses", id);
+    if (isPersistedId(id)) {
+      await dbDelete("expenses", id);
     }
     setExpenseEntries((prev) => prev.filter((e) => e.id !== id));
   }, []);
@@ -600,7 +707,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
       id: input.id ?? generateId("ten"),
       created_at: new Date().toISOString(),
     };
-    const realId = await notionCreate(
+    const realId = await dbCreate(
       "tenants",
       tenantCreateFields(draft, {
         unit: unitNameById(draft.unit_id),
@@ -610,8 +717,8 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     const tenant = { ...draft, id: realId };
     setTenants((prev) => [tenant, ...prev]);
     if (tenant.unit_id) {
-      if (isNotionId(tenant.unit_id)) {
-        await notionUpdate(
+      if (isPersistedId(tenant.unit_id)) {
+        await dbUpdate(
           "units",
           tenant.unit_id,
           unitPatchFields({ is_rented: true, tenant_name: tenant.name }, { property: propNameForUnit(tenant.unit_id) })
@@ -631,19 +738,19 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     if (!current) return;
     const unitId = patch.unit_id ?? current.unit_id;
     const nextTenant = { ...current, ...patch };
-    if (isNotionId(id)) {
-      await notionUpdate(
+    if (isPersistedId(id)) {
+      await dbUpdate(
         "tenants",
         id,
         tenantPatchFields(patch, { unit: unitNameById(unitId), property: propNameForUnit(unitId) })
       );
     }
     const unitUpdates: Promise<void>[] = [];
-    if (current.unit_id && current.unit_id !== nextTenant.unit_id && isNotionId(current.unit_id)) {
-      unitUpdates.push(notionUpdate("units", current.unit_id, unitPatchFields({ is_rented: false, tenant_name: null }, { property: propNameForUnit(current.unit_id) })));
+    if (current.unit_id && current.unit_id !== nextTenant.unit_id && isPersistedId(current.unit_id)) {
+      unitUpdates.push(dbUpdate("units", current.unit_id, unitPatchFields({ is_rented: false, tenant_name: null }, { property: propNameForUnit(current.unit_id) })));
     }
-    if (nextTenant.unit_id && isNotionId(nextTenant.unit_id)) {
-      unitUpdates.push(notionUpdate("units", nextTenant.unit_id, unitPatchFields({ is_rented: true, tenant_name: nextTenant.name }, { property: propNameForUnit(nextTenant.unit_id) })));
+    if (nextTenant.unit_id && isPersistedId(nextTenant.unit_id)) {
+      unitUpdates.push(dbUpdate("units", nextTenant.unit_id, unitPatchFields({ is_rented: true, tenant_name: nextTenant.name }, { property: propNameForUnit(nextTenant.unit_id) })));
     }
     await Promise.all(unitUpdates);
     setTenants((prev) => prev.map((t) => (t.id === id ? nextTenant : t)));
@@ -658,12 +765,12 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
 
   const deleteTenant = useCallback(async (id: string) => {
     const current = tenantsRef.current.find((t) => t.id === id);
-    if (isNotionId(id)) {
-      await notionDelete("tenants", id);
+    if (isPersistedId(id)) {
+      await dbDelete("tenants", id);
     }
     if (current?.unit_id) {
-      if (isNotionId(current.unit_id)) {
-        await notionUpdate("units", current.unit_id, unitPatchFields({ is_rented: false, tenant_name: null }, { property: propNameForUnit(current.unit_id) }));
+      if (isPersistedId(current.unit_id)) {
+        await dbUpdate("units", current.unit_id, unitPatchFields({ is_rented: false, tenant_name: null }, { property: propNameForUnit(current.unit_id) }));
       }
       setUnits((prev) =>
         prev.map((unit) => (unit.id === current.unit_id ? { ...unit, is_rented: false, tenant_name: null } : unit))
@@ -726,7 +833,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
 
     return {
       properties,
-      notionLoadError,
+      loadError,
       visibleProperties,
       getProperty: (id) => properties.find((p) => p.id === id),
       createProperty,
@@ -776,7 +883,7 @@ export function RentalProvider({ children }: { children: React.ReactNode }) {
     expenseEntries,
     tenants,
     maintenanceEntries,
-    notionLoadError,
+    loadError,
     createProperty,
     updateProperty,
     softDeleteProperty,

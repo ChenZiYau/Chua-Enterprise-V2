@@ -1,5 +1,5 @@
 // Pure share-link helpers — safe to import from BOTH client and server.
-// Contains NO Notion / server-only imports. This is the single source of truth
+// Contains NO server-only imports. This is the single source of truth
 // for public share URLs so a future phase can add tokens / expiry / click
 // tracking (e.g. `?t=<token>`) in ONE place without touching every component.
 

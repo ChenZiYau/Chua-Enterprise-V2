@@ -6,8 +6,8 @@ import { useState } from "react";
 import { AddPropertyForm, type PropertyFormValues } from "@/components/property/AddPropertyForm";
 import { SharePreviewModal } from "@/components/share/SharePreviewModal";
 import { useRental } from "@/context/RentalContext";
-import { uploadPropertyCover } from "@/lib/notionClient";
-import type { Property, Unit } from "@/types/rental";
+import { uploadPropertyCover } from "@/lib/dbClient";
+import type { Property, RoomInput, Unit } from "@/types/rental";
 
 export default function NewPropertyPage() {
   const router = useRouter();
@@ -17,6 +17,8 @@ export default function NewPropertyPage() {
 
   // Phase 4: staged values shown in the confirmation preview before committing.
   const [pending, setPending] = useState<PropertyFormValues | null>(null);
+  // Staged rooms (room-rental properties) to create alongside the property.
+  const [pendingRooms, setPendingRooms] = useState<RoomInput[] | undefined>(undefined);
   // A cropped/uploaded cover Blob (null when no cover was chosen).
   const [coverFile, setCoverFile] = useState<File | null>(null);
   // Object URL for previewing the cropped cover (which isn't yet a remote URL).
@@ -42,13 +44,15 @@ export default function NewPropertyPage() {
 
   const previewUnits: Unit[] =
     pending && pending.rental_model === "room_rental"
-      ? Array.from({ length: Math.max(1, pending.total_units || 1) }, (_, i) => ({
+      ? (pendingRooms ?? []).map((r, i) => ({
           id: `preview-${i}`,
           property_id: "preview",
-          name: `Room ${i + 1}`,
+          name: r.name || `Room ${i + 1}`,
           label: `R${i + 1}`,
           sort_order: i + 1,
-          is_rented: i < (pending.rented_units || 0),
+          is_rented: (r.tenant_name ?? "").trim() !== "",
+          tenant_name: r.tenant_name,
+          rental_rate: r.rental_rate,
           electricity_free_units: 0,
         }))
       : [];
@@ -60,7 +64,7 @@ export default function NewPropertyPage() {
     try {
       // For an uploaded cover, the URL field is empty — the cover is attached to
       // the page after creation, so we don't persist an expiring URL as text.
-      const created = await createProperty(pending);
+      const created = await createProperty(pending, pendingRooms);
       if (coverFile) {
         const freshUrl = await uploadPropertyCover(created.id, coverFile);
         setPropertyCoverLocal(created.id, freshUrl);
@@ -68,7 +72,7 @@ export default function NewPropertyPage() {
       if (coverPreview) URL.revokeObjectURL(coverPreview);
       router.push(`/admin/properties/${created.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save property to Notion.");
+      setError(err instanceof Error ? err.message : "Could not save property to the database.");
       setSaving(false);
     }
   }
@@ -113,10 +117,11 @@ export default function NewPropertyPage() {
           submitLabel="Save Property"
           onCancel={() => router.push("/admin/properties")}
           onCoverFileChange={handleCoverFile}
-          onSubmit={(values) => {
+          onSubmit={(values, rooms) => {
             // Don't commit yet — stage the values and open the confirmation preview.
             setError(null);
             setPending(values);
+            setPendingRooms(rooms);
           }}
         />
       </div>

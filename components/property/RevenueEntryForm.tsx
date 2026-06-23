@@ -237,7 +237,7 @@ export function RevenueEntryForm({
       setSaved(true);
       onSaved?.();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Could not save revenue to Notion.");
+      setSaveError(err instanceof Error ? err.message : "Could not save revenue to the database.");
     } finally {
       setSaving(false);
     }

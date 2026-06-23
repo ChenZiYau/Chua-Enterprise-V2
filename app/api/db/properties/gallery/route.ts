@@ -1,22 +1,22 @@
 import { NextResponse } from "next/server";
-import { uploadFile, setPageGallery, type GalleryItemSpec } from "@/lib/notion";
+import { setPropertyGallery, type GalleryItemSpec } from "@/lib/db";
 
-// Persists an ordered gallery for a property page. Accepts multipart form-data:
-//   pageId : string
-//   spec   : JSON array describing order — { kind:"url", url } | { kind:"file", key }
-//   <key>  : the image Blob for each { kind:"file" } item
-// Uploaded files go through Notion's File Upload API; both uploads and URL items
-// are written, in order, to the page's "Gallery" files property.
+// Persists an ordered gallery for a property. Accepts multipart form-data:
+//   propertyId : string
+//   spec       : JSON array describing order — { kind:"url", url } | { kind:"file", key }
+//   <key>      : the image Blob for each { kind:"file" } item
+// Uploaded files go to Supabase Storage; both uploads and URL items are written,
+// in order, to the property's gallery_urls column.
 type SpecItem = { kind: "url"; url: string } | { kind: "file"; key: string };
 
 export async function POST(req: Request) {
   try {
     const form = await req.formData();
-    const pageId = form.get("pageId");
+    const propertyId = form.get("propertyId");
     const specRaw = form.get("spec");
 
-    if (typeof pageId !== "string" || !pageId) {
-      return NextResponse.json({ error: "missing pageId" }, { status: 400 });
+    if (typeof propertyId !== "string" || !propertyId) {
+      return NextResponse.json({ error: "missing propertyId" }, { status: 400 });
     }
     if (typeof specRaw !== "string") {
       return NextResponse.json({ error: "missing spec" }, { status: 400 });
@@ -36,11 +36,15 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "an image exceeds 20MB" }, { status: 400 });
       }
       const filename = (blob as File).name || "photo.jpg";
-      const id = await uploadFile(await blob.arrayBuffer(), filename, blob.type || "image/jpeg");
-      items.push({ type: "file_upload", id });
+      items.push({
+        type: "upload",
+        bytes: await blob.arrayBuffer(),
+        filename,
+        contentType: blob.type || "image/jpeg",
+      });
     }
 
-    const urls = await setPageGallery(pageId, items);
+    const urls = await setPropertyGallery(propertyId, items);
     return NextResponse.json({ urls });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

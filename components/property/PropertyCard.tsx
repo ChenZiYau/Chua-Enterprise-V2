@@ -21,18 +21,38 @@ function formatMYR(value: number | undefined) {
   }).format(value);
 }
 
-function statusChipClass(status: Property["status"]) {
+function statusLabelColor(status: Property["status"]) {
   switch (status) {
     case "active":
-      return "ui-chip-success";
+      return "var(--success)";
     case "under_service":
-      return "ui-chip-warning";
+      return "var(--warning)";
     default:
-      return "";
+      return "var(--text-muted)";
   }
 }
 
-export function PropertyCard({ property }: { property: Property }) {
+/** A plain, uppercase text label — no pill/background. */
+function Tag({ children, color }: { children: React.ReactNode; color?: string }) {
+  return (
+    <span
+      className="text-[11px] font-semibold uppercase tracking-wider"
+      style={{ color: color ?? "var(--text-muted)" }}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function PropertyCard({
+  property,
+  pinned = false,
+  onTogglePin,
+}: {
+  property: Property;
+  pinned?: boolean;
+  onTogglePin?: () => void;
+}) {
   const [imgSrc, setImgSrc] = useState(property.image_url || PROPERTY_FALLBACK_IMAGE);
   const [quickEntry, setQuickEntry] = useState<null | "revenue" | "expense">(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -76,31 +96,56 @@ export function PropertyCard({ property }: { property: Property }) {
           className="w-full h-full object-cover"
           onError={() => setImgSrc(PROPERTY_FALLBACK_IMAGE)}
         />
-        {/* Edit in place — sits above the stretched overlay link (z-10). */}
-        <button
-          type="button"
-          onClick={() => setEditOpen(true)}
-          aria-label={`Edit ${property.name}`}
-          title="Edit property"
-          className="absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-lg flex items-center justify-center transition"
-          style={{
-            background: "rgba(15,17,22,0.55)",
-            color: "#fff",
-            backdropFilter: "blur(4px)",
-            border: "1px solid rgba(255,255,255,0.18)",
-          }}
-        >
-          <IconEdit className="w-4 h-4" />
-        </button>
+        {/* Pin + Edit — sit above the stretched overlay link (z-10). */}
+        <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5">
+          {onTogglePin && (
+            <button
+              type="button"
+              onClick={onTogglePin}
+              aria-label={pinned ? `Unpin ${property.name}` : `Pin ${property.name}`}
+              aria-pressed={pinned}
+              title={pinned ? "Unpin property" : "Pin property"}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition"
+              style={{
+                background: pinned ? "var(--accent)" : "rgba(15,17,22,0.55)",
+                color: "#fff",
+                backdropFilter: "blur(4px)",
+                border: pinned
+                  ? "1px solid var(--accent)"
+                  : "1px solid rgba(255,255,255,0.18)",
+              }}
+            >
+              <IconPin className="w-4 h-4" filled={pinned} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            aria-label={`Edit ${property.name}`}
+            title="Edit property"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition"
+            style={{
+              background: "rgba(15,17,22,0.55)",
+              color: "#fff",
+              backdropFilter: "blur(4px)",
+              border: "1px solid rgba(255,255,255,0.18)",
+            }}
+          >
+            <IconEdit className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="p-5 flex flex-col gap-4 flex-1">
         {/* Labels live in the body (not over the image) so they stay legible */}
         <div className="flex items-center justify-between gap-2">
-          <span className="ui-chip">{RENTAL_MODEL_LABEL[property.rental_model]}</span>
-          <span className={"ui-chip " + statusChipClass(property.status)}>
-            {STATUS_LABEL[property.status]}
+          <span className="flex items-center gap-1.5">
+            {pinned && <IconPin className="w-3 h-3" filled style={{ color: "var(--accent)" }} />}
+            <Tag>{RENTAL_MODEL_LABEL[property.rental_model]}</Tag>
           </span>
+          <Tag color={statusLabelColor(property.status)}>
+            {STATUS_LABEL[property.status]}
+          </Tag>
         </div>
 
         <div className="min-w-0">
@@ -120,9 +165,9 @@ export function PropertyCard({ property }: { property: Property }) {
              show whether it is occupied or available. */
           <div className="flex items-center justify-between text-xs">
             <span style={{ color: "var(--text-secondary)" }}>Whole unit</span>
-            <span className={"ui-chip " + (isOccupied ? "ui-chip-success" : "ui-chip-warning")}>
+            <Tag color={isOccupied ? "var(--success)" : "var(--warning)"}>
               {isOccupied ? "Occupied" : "Available"}
-            </span>
+            </Tag>
           </div>
         ) : (
           <div>
@@ -183,6 +228,32 @@ export function PropertyCard({ property }: { property: Property }) {
         property={editOpen ? property : null}
       />
     </div>
+  );
+}
+
+function IconPin({
+  className,
+  filled = false,
+  style,
+}: {
+  className?: string;
+  filled?: boolean;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      style={style}
+    >
+      <path d="M9 4h6l-1 7 4 3v2H6v-2l4-3-1-7Z" />
+      <line x1="12" y1="16" x2="12" y2="21" />
+    </svg>
   );
 }
 

@@ -10,7 +10,7 @@ import {
   updateEntity,
   deleteEntity,
   type Entity,
-} from "@/lib/notion";
+} from "@/lib/db";
 
 const handlers = {
   properties: getProperties,
@@ -21,7 +21,7 @@ const handlers = {
   maintenance: getMaintenance,
 } as const;
 
-// Entities that currently support writing back to Notion.
+// Entities that support writing back to Supabase.
 const WRITABLE: Entity[] = ["properties", "units", "maintenance", "revenue", "expenses", "tenants"];
 
 function isWritable(entity: string): entity is Entity {
@@ -99,7 +99,7 @@ export async function DELETE(
     if (!id) {
       return NextResponse.json({ error: "missing id" }, { status: 400 });
     }
-    await deleteEntity(id);
+    await deleteEntity(entity, id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
 import { DatePickerField } from "@/components/ui/DatePicker";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
-import { notionUpdate, isNotionId } from "@/lib/notionClient";
+import { dbUpdate, isPersistedId } from "@/lib/dbClient";
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, type PaymentMethod, type PaymentStatus, type RevenueEntry } from "@/types/rental";
 import type {
   DashboardData,
@@ -82,8 +82,8 @@ function prioColor(priority: string, reason: "urgent" | "overdue") {
 
 type MaintStatusKey = "pending" | "in_progress" | "completed";
 type MaintPriorityKey = "low" | "medium" | "high" | "urgent";
-const NOTION_STATUS: Record<MaintStatusKey, string> = { pending: "Pending", in_progress: "In Progress", completed: "Completed" };
-const NOTION_PRIORITY: Record<MaintPriorityKey, string> = { low: "Low", medium: "Medium", high: "High", urgent: "Urgent" };
+const STATUS_LABELS: Record<MaintStatusKey, string> = { pending: "Pending", in_progress: "In Progress", completed: "Completed" };
+const PRIORITY_LABELS: Record<MaintPriorityKey, string> = { low: "Low", medium: "Medium", high: "High", urgent: "Urgent" };
 function normStatus(v: string): MaintStatusKey {
   const s = v.trim().toLowerCase();
   if (s === "in progress" || s === "in_progress") return "in_progress";
@@ -1081,18 +1081,18 @@ function MaintItemDrawer({
     setSaving(true);
     setError(null);
     try {
-      if (isNotionId(item.id)) {
-        await notionUpdate("maintenance", item.id, {
-          status: NOTION_STATUS[status],
-          priority: NOTION_PRIORITY[priority],
+      if (isPersistedId(item.id)) {
+        await dbUpdate("maintenance", item.id, {
+          status: STATUS_LABELS[status],
+          priority: PRIORITY_LABELS[priority],
           assignedTo: assignedTo.trim(),
           dueDate: dueDate || undefined,
           description: description.trim(),
         });
       }
       onSaved({
-        status: NOTION_STATUS[status],
-        priority: NOTION_PRIORITY[priority],
+        status: STATUS_LABELS[status],
+        priority: PRIORITY_LABELS[priority],
         assignedTo: assignedTo.trim(),
         dueDate,
         description: description.trim(),
@@ -1658,7 +1658,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   const close = () => setModal({ kind: "none" });
 
   // Optimistic overrides so edits made here show immediately, even before the
-  // server component re-fetches from Notion (we also call router.refresh()).
+  // server component re-fetches from Supabase (we also call router.refresh()).
   const [rentOv, setRentOv] = useState<Record<string, Partial<RentEntry>>>({});
   const [unitOv, setUnitOv] = useState<Record<string, Partial<UnitDetail>>>({});
   const [maintOv, setMaintOv] = useState<Record<string, Partial<MaintItem>>>({});

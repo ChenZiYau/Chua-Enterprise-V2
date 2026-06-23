@@ -202,7 +202,7 @@ export default function TenantsPage() {
       await deleteTenant(t.id);
       setDrawer({ mode: "closed" });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not delete tenant from Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not delete tenant from the database.");
     }
   }
 
@@ -482,7 +482,7 @@ export default function TenantsPage() {
               }
               setDrawer({ mode: "closed" });
             } catch (err) {
-              setActionError(err instanceof Error ? err.message : "Could not save tenant to Notion.");
+              setActionError(err instanceof Error ? err.message : "Could not save tenant to the database.");
               throw err;
             }
           }}
@@ -1282,7 +1282,7 @@ function TenantFormDrawer({
         notes: notes.trim() || null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save tenant to Notion.");
+      setError(err instanceof Error ? err.message : "Could not save tenant to the database.");
     } finally {
       setSaving(false);
     }

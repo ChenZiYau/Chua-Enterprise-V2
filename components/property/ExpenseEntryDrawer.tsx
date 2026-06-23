@@ -178,7 +178,7 @@ export function ExpenseEntryDrawer({
       setSavedCount(validItems.length);
       setTimeout(() => onClose(), 700);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Could not save expenses to Notion.");
+      setSaveError(err instanceof Error ? err.message : "Could not save expenses to the database.");
     } finally {
       setSaving(false);
     }

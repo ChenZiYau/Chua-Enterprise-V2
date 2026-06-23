@@ -26,7 +26,7 @@ export default function QuickEntryPage() {
   const year = y;
   const monthIdx = m - 1;
 
-  // Default to the first property once properties hydrate from Notion.
+  // Default to the first property once properties hydrate from the database.
   useEffect(() => {
     if (!propertyId && visibleProperties.length) setPropertyId(visibleProperties[0].id);
   }, [visibleProperties, propertyId]);

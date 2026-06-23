@@ -281,7 +281,7 @@ export function RevenueEntryDrawer({
       setDirty(false);
       setTimeout(() => onClose(), 700);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Could not save revenue to Notion.");
+      setSaveError(err instanceof Error ? err.message : "Could not save revenue to the database.");
     } finally {
       setSaving(false);
     }

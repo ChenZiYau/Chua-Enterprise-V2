@@ -1,9 +1,9 @@
 import "server-only";
-import { getProperties, getUnits } from "@/lib/notion";
+import { getProperties, getUnits } from "@/lib/db";
 import { roomSlug, splitGalleryUrls } from "@/lib/share";
 
 // Server-only listing layer for the PUBLIC share pages. It deliberately maps
-// the rich Notion rows down to a tiny, safe shape. Nothing here exposes
+// the rich database rows down to a tiny, safe shape. Nothing here exposes
 // revenue, expenses, tenant identities, or occupancy — only what a prospective
 // customer should see: name, location, photos, and basic specs.
 

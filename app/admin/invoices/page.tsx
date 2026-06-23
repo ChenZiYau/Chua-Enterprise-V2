@@ -171,7 +171,7 @@ export default function InvoicesPage() {
         invoice_number: number,
       });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not save receipt number to Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not save receipt number to the database.");
       return;
     }
     openReceiptWindow(receiptDataFor(entry, number), true);
@@ -194,7 +194,7 @@ export default function InvoicesPage() {
     try {
       await deleteRevenueEntry(entry.id);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not delete invoice from Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not delete invoice from the database.");
     }
   }
 

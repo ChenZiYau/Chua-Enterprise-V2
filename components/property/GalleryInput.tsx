@@ -58,16 +58,22 @@ export function GalleryInput({
     []
   );
 
-  // Skip the initial emit so simply opening a form (e.g. the edit drawer) doesn't
-  // normalize/echo existing URLs back and look like an unsaved change.
-  const didMount = useRef(false);
+  // Baseline signature of the list as first seen. We only report upward when the
+  // list actually differs from this baseline — so opening a form (or React
+  // StrictMode's double-mount in dev) never looks like an unsaved change, and
+  // adding then removing back to the original is correctly treated as "clean".
+  const baselineSig = useRef<string | null>(null);
+  const sigOf = (list: Item[]) =>
+    list.map((it) => (it.kind === "url" ? `u:${it.url}` : `f:${it.key}`)).join("|");
 
   // Report changes upward whenever the list changes (after first render).
   useEffect(() => {
-    if (!didMount.current) {
-      didMount.current = true;
+    const sig = sigOf(items);
+    if (baselineSig.current === null) {
+      baselineSig.current = sig;
       return;
     }
+    if (sig === baselineSig.current) return;
     onItemsChange?.(
       items.map((it) =>
         it.kind === "url"

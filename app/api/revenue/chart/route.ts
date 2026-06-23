@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRevenue } from "@/lib/notion";
+import { getRevenue } from "@/lib/db";
 import { buildRevenueChart, type RangeType } from "@/lib/revenueChart";
 
 const VALID_RANGES: RangeType[] = ["monthly", "3months", "6months", "12months", "custom"];

@@ -1,6 +1,6 @@
 // Pure, reusable revenue-chart logic: resolve a date range, pick a sensible
 // grouping granularity, and bucket real revenue records into chart-ready points.
-// No Notion / network code here so it stays easy to test and reuse.
+// No network code here so it stays easy to test and reuse.
 
 import { todayIso } from "@/lib/date";
 

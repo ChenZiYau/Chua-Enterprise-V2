@@ -1,4 +1,4 @@
-// Pure dashboard compute layer. Takes the raw Notion rows and derives the
+// Pure dashboard compute layer. Takes the raw database rows and derives the
 // rental-operations view the admin needs for a daily checkup. No network here
 // so it stays easy to reason about and reuse; all values come from real rows.
 
@@ -9,7 +9,7 @@ import type {
   RevenueRow,
   ExpenseRow,
   MaintenanceRow,
-} from "@/lib/notion";
+} from "@/lib/db";
 import { startOfDay, todayIso } from "@/lib/date";
 
 export type OverdueTenant = {
@@ -126,7 +126,7 @@ export type MaintItem = {
 export type PropertyHealth = {
   id: string;
   name: string;
-  rentalModel: string; // raw Notion value: "whole_unit" | "room_rental"
+  rentalModel: string; // raw stored value: "whole_unit" | "room_rental"
   modelLabel: string; // "Whole Unit" | "Room Rental"
   isWhole: boolean; // true when the whole property is let as one unit
   unitWord: string; // "unit"/"units" | "room"/"rooms"

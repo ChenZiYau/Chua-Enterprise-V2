@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { PropertyCard } from "@/components/property/PropertyCard";
 import { useRental } from "@/context/RentalContext";
+import { usePinnedProperties } from "@/lib/usePinnedProperties";
 import { IconSearch } from "@/components/admin/icons";
 import { Select } from "@/components/ui/Select";
 import { STATUS_LABEL, type PropertyFilters } from "@/types/rental";
@@ -17,22 +18,26 @@ const initialFilters: PropertyFilters = {
 export default function PropertiesPage() {
   const [filters, setFilters] = useState<PropertyFilters>(initialFilters);
   const { visibleProperties: properties } = useRental();
+  const { isPinned, togglePin } = usePinnedProperties();
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
-    return properties.filter((p) => {
-      if (filters.rental_model !== "all" && p.rental_model !== filters.rental_model) return false;
-      if (filters.status !== "all" && p.status !== filters.status) return false;
-      if (!q) return true;
-      return (
-        p.name.toLowerCase().includes(q) ||
-        p.short_name.toLowerCase().includes(q) ||
-        p.address.toLowerCase().includes(q) ||
-        p.city.toLowerCase().includes(q) ||
-        p.state.toLowerCase().includes(q)
-      );
-    });
-  }, [properties, filters]);
+    return properties
+      .filter((p) => {
+        if (filters.rental_model !== "all" && p.rental_model !== filters.rental_model) return false;
+        if (filters.status !== "all" && p.status !== filters.status) return false;
+        if (!q) return true;
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.short_name.toLowerCase().includes(q) ||
+          p.address.toLowerCase().includes(q) ||
+          p.city.toLowerCase().includes(q) ||
+          p.state.toLowerCase().includes(q)
+        );
+      })
+      // Pinned properties float to the top; otherwise keep the existing order.
+      .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)));
+  }, [properties, filters, isPinned]);
 
   const roomCount = properties.filter((p) => p.rental_model === "room_rental").length;
   const wholeCount = properties.filter((p) => p.rental_model === "whole_unit").length;
@@ -125,7 +130,12 @@ export default function PropertiesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filtered.map((p) => (
-            <PropertyCard key={p.id} property={p} />
+            <PropertyCard
+              key={p.id}
+              property={p}
+              pinned={isPinned(p.id)}
+              onTogglePin={() => togglePin(p.id)}
+            />
           ))}
         </div>
       )}

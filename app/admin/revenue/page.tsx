@@ -150,7 +150,7 @@ export default function RevenuePage() {
     try {
       await deleteRevenueEntry(id);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not delete revenue from Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not delete revenue from the database.");
     }
   }
 

@@ -29,6 +29,9 @@ export const IconExpenses = (p: IconProps) => (
 export const IconInvoices = (p: IconProps) => (
   <svg {...base} {...p}><path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M9 12h6M9 16h6M9 8h3"/></svg>
 );
+export const IconDeposit = (p: IconProps) => (
+  <svg {...base} {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8v.6M12 14.6v.6M3 8h18"/></svg>
+);
 export const IconTenants = (p: IconProps) => (
   <svg {...base} {...p}><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15 20c0-2.6 1.4-4.6 4-5"/></svg>
 );

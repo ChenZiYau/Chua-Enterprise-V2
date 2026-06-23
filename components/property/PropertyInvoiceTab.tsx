@@ -112,7 +112,7 @@ export function PropertyInvoiceTab({ property }: { property: Property }) {
     try {
       await updateRevenueEntry(entry.id, { invoice_generated: true, invoice_number: number });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not save receipt number to Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not save receipt number to the database.");
       return;
     }
     openReceiptWindow(receiptDataFor(entry, number), true);
@@ -134,7 +134,7 @@ export function PropertyInvoiceTab({ property }: { property: Property }) {
     try {
       await deleteRevenueEntry(entry.id);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not delete invoice from Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not delete invoice from the database.");
     }
   }
 
@@ -164,7 +164,7 @@ export function PropertyInvoiceTab({ property }: { property: Property }) {
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {isRoom && rooms.length > 0 && (
               <Select
-                className="w-auto min-w-[150px]"
+                className="w-auto min-w-[200px]"
                 ariaLabel="Filter by room"
                 value={filterUnit}
                 onChange={setFilterUnit}

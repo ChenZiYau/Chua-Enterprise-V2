@@ -7,7 +7,7 @@ import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Select";
 import { DatePickerField } from "@/components/ui/DatePicker";
-import { notionCreate, notionUpdate, notionDelete, isNotionId } from "@/lib/notionClient";
+import { dbCreate, dbUpdate, dbDelete, isPersistedId } from "@/lib/dbClient";
 import { todayIso as getTodayIso, startOfDay, daysAgoIso } from "@/lib/date";
 import type { MaintenanceEntry } from "@/types/rental";
 
@@ -89,7 +89,7 @@ const tabs: { value: MaintenanceTab; label: string }[] = [
   { value: "overdue", label: "Overdue" },
 ];
 
-// Mirrors the Category select options in the Notion maintenance database.
+// Mirrors the Category select options in the maintenance table.
 const MAINTENANCE_CATEGORIES = [
   "Air Conditioning",
   "Plumbing",
@@ -102,12 +102,12 @@ const MAINTENANCE_CATEGORIES = [
   "Other",
 ];
 
-const NOTION_STATUS: Record<MaintenanceStatus, string> = {
+const STATUS_LABELS: Record<MaintenanceStatus, string> = {
   pending: "Pending",
   in_progress: "In Progress",
   completed: "Completed",
 };
-const NOTION_PRIORITY: Record<MaintenancePriority, string> = {
+const PRIORITY_LABELS: Record<MaintenancePriority, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
@@ -309,7 +309,7 @@ export default function MaintenancePage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/notion/maintenance", { cache: "no-store" });
+        const res = await fetch("/api/db/maintenance", { cache: "no-store" });
         const json = (await res.json()) as { data?: MaintenanceApiRow[]; error?: string };
         if (cancelled) return;
         if (!res.ok || json.error) {
@@ -410,15 +410,15 @@ export default function MaintenancePage() {
     return null;
   }
 
-  function notionFieldsFromCase(c: MaintenanceCase) {
+  function dbFieldsFromCase(c: MaintenanceCase) {
     return {
       name: c.issue,
       property: c.property,
       unit: c.unit,
       tenant: c.tenant,
       category: c.category,
-      priority: NOTION_PRIORITY[c.priority],
-      status: NOTION_STATUS[c.status],
+      priority: PRIORITY_LABELS[c.priority],
+      status: STATUS_LABELS[c.status],
       reportedDate: c.reportedDate,
       dueDate: c.dueDate,
       assignedTo: c.assignedTo,
@@ -469,7 +469,7 @@ export default function MaintenancePage() {
     try {
       if (dialogMode === "new") {
         const draft = caseFromForm(form, "pending");
-        const id = await notionCreate("maintenance", notionFieldsFromCase(draft));
+        const id = await dbCreate("maintenance", dbFieldsFromCase(draft));
         const newCase = { ...draft, id };
         setCases((prev) => [newCase, ...prev]);
         upsertMaintenanceEntry(toMaintenanceEntry(newCase));
@@ -477,8 +477,8 @@ export default function MaintenancePage() {
         closeDialog();
       } else if (dialogMode === "edit" && selectedCase) {
         const updated = caseFromForm(form, selectedCase.id);
-        if (isNotionId(selectedCase.id)) {
-          await notionUpdate("maintenance", selectedCase.id, notionFieldsFromCase(updated));
+        if (isPersistedId(selectedCase.id)) {
+          await dbUpdate("maintenance", selectedCase.id, dbFieldsFromCase(updated));
         }
         setCases((prev) => prev.map((item) => (item.id === selectedCase.id ? updated : item)));
         upsertMaintenanceEntry(toMaintenanceEntry(updated));
@@ -486,7 +486,7 @@ export default function MaintenancePage() {
         setDialogMode("view");
       }
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Couldn't save to Notion.");
+      setFormError(err instanceof Error ? err.message : "Couldn't save to the database.");
     } finally {
       setSaving(false);
     }
@@ -511,15 +511,15 @@ export default function MaintenancePage() {
     const updated: MaintenanceCase = { ...item, status: "completed", description };
 
     setActionError(null);
-    // #3: persist to Notion FIRST so the UI never diverges from the database.
-    if (isNotionId(item.id)) {
+    // #3: persist to Supabase FIRST so the UI never diverges from the database.
+    if (isPersistedId(item.id)) {
       try {
-        await notionUpdate("maintenance", item.id, {
+        await dbUpdate("maintenance", item.id, {
           status: "Completed",
           description: updated.description,
         });
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Couldn't update Notion - no changes were made.");
+        setActionError(err instanceof Error ? err.message : "Couldn't update the database - no changes were made.");
         return;
       }
     }
@@ -529,7 +529,7 @@ export default function MaintenancePage() {
     applyQuickFilter("completed");
   }
 
-  // Delete a case (used from the card menu) - archives the Notion page too.
+  // Delete a case (used from the card menu) - deletes the Supabase row too.
   async function deleteCase(item: MaintenanceCase) {
     const { confirmed } = await confirm({
       title: "Delete maintenance case?",
@@ -539,12 +539,12 @@ export default function MaintenancePage() {
     });
     if (!confirmed) return;
     setActionError(null);
-    // #3: confirm the archive succeeded in Notion before removing it locally.
-    if (isNotionId(item.id)) {
+    // #3: confirm the delete succeeded in Supabase before removing it locally.
+    if (isPersistedId(item.id)) {
       try {
-        await notionDelete("maintenance", item.id);
+        await dbDelete("maintenance", item.id);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Couldn't delete from Notion - nothing was removed.");
+        setActionError(err instanceof Error ? err.message : "Couldn't delete from the database - nothing was removed.");
         return;
       }
     }
@@ -565,7 +565,7 @@ export default function MaintenancePage() {
           </h2>
           <p className="text-sm mt-1.5" style={{ color: "var(--text-muted)" }}>
             {loading ? (
-              "Loading from Notion..."
+              "Loading from the database..."
             ) : (
               <>
                 {cases.length} cases
@@ -716,12 +716,12 @@ export default function MaintenancePage() {
       </section>
 
       {loading ? (
-        <EmptyState pulse message="Loading maintenance cases from Notion..." />
+        <EmptyState pulse message="Loading maintenance cases from the database..." />
       ) : loadError ? (
         <div className="ui-card p-12 text-center">
           <IconMaintenance className="w-8 h-8 mx-auto mb-3" style={{ color: "var(--danger)" }} />
           <p className="text-sm font-medium" style={{ color: "var(--danger)" }}>
-            Couldn't load from Notion.
+            Couldn't load from the database.
           </p>
           <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
             {loadError}
@@ -729,7 +729,7 @@ export default function MaintenancePage() {
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
-          message={cases.length === 0 ? "No maintenance cases in Notion yet." : "No maintenance cases match the current filters."}
+          message={cases.length === 0 ? "No maintenance cases in the database yet." : "No maintenance cases match the current filters."}
         />
       ) : (
         <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">

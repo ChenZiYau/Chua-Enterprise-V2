@@ -1,20 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EditModalShell } from "@/components/ui/EditModalShell";
 import { PropertyForm, type PropertyFormValues } from "@/components/property/PropertyForm";
+import { roomsFromUnits } from "@/components/property/RoomManager";
 import type { GalleryOutItem } from "@/components/property/GalleryInput";
 import { SharePreviewModal } from "@/components/share/SharePreviewModal";
 import { useRental } from "@/context/RentalContext";
-import { uploadPropertyCover, uploadPropertyGallery } from "@/lib/notionClient";
-import type { Property } from "@/types/rental";
+import { uploadPropertyCover, uploadPropertyGallery } from "@/lib/dbClient";
+import type { Property, RoomInput } from "@/types/rental";
 
 const FORM_ID = "property-edit-form";
 
 /**
  * Edit a property in place. Renders the SAME reusable PropertyForm as the Add
  * flow (with upload+crop cover + multi-image gallery), locks the rental model,
- * and reuses the Add flow's save→preview→confirm before writing to Notion.
+ * and reuses the Add flow's save→preview→confirm before writing to the database.
  */
 export function PropertyEditModal({
   open,
@@ -25,10 +26,11 @@ export function PropertyEditModal({
   onClose: () => void;
   property: Property | null;
 }) {
-  const { updateProperty, setPropertyCoverLocal, setPropertyGalleryLocal } = useRental();
+  const { updateProperty, setPropertyCoverLocal, setPropertyGalleryLocal, getUnitsForProperty } = useRental();
 
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState<PropertyFormValues | null>(null);
+  const [pendingRooms, setPendingRooms] = useState<RoomInput[] | undefined>(undefined);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [galleryItems, setGalleryItems] = useState<GalleryOutItem[]>([]);
@@ -50,6 +52,7 @@ export function PropertyEditModal({
       setGalleryTouched(false);
       setSaving(false);
       setError(null);
+      setPendingRooms(undefined);
     }
   }, [open, property?.id]);
 
@@ -60,6 +63,12 @@ export function PropertyEditModal({
       return file ? URL.createObjectURL(file) : null;
     });
   }
+
+  // Existing rooms (units) seeded into the form so they can be edited.
+  const initialRooms = useMemo(
+    () => (property ? roomsFromUnits(getUnitsForProperty(property.id)) : []),
+    [property, getUnitsForProperty]
+  );
 
   if (!open || !property) return null;
 
@@ -77,6 +86,21 @@ export function PropertyEditModal({
       }
     : null;
 
+  const previewUnits =
+    pending && pendingRooms
+      ? pendingRooms.map((r, i) => ({
+          id: `preview-${i}`,
+          property_id: property.id,
+          name: r.name || `Room ${i + 1}`,
+          label: `R${i + 1}`,
+          sort_order: i + 1,
+          is_rented: (r.tenant_name ?? "").trim() !== "",
+          tenant_name: r.tenant_name,
+          rental_rate: r.rental_rate,
+          electricity_free_units: 0,
+        }))
+      : [];
+
   async function handleConfirm() {
     if (!pending || !property) return;
     setSaving(true);
@@ -85,7 +109,7 @@ export function PropertyEditModal({
       // Never change the rental model on update (it's locked in edit mode).
       const { rental_model: _ignored, ...patch } = pending;
       void _ignored;
-      await updateProperty(property.id, patch);
+      await updateProperty(property.id, patch, pendingRooms);
       if (coverFile) {
         const freshUrl = await uploadPropertyCover(property.id, coverFile);
         setPropertyCoverLocal(property.id, freshUrl);
@@ -100,7 +124,7 @@ export function PropertyEditModal({
       if (coverPreview) URL.revokeObjectURL(coverPreview);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save property to Notion.");
+      setError(err instanceof Error ? err.message : "Could not save property to the database.");
       setSaving(false);
     }
   }
@@ -127,6 +151,7 @@ export function PropertyEditModal({
           id={FORM_ID}
           mode="edit"
           initial={property}
+          initialRooms={initialRooms}
           submitLabel="Save Changes"
           hideFooter
           onDirtyChange={setDirty}
@@ -135,10 +160,11 @@ export function PropertyEditModal({
             setGalleryItems(items);
             setGalleryTouched(true);
           }}
-          onSubmit={(values) => {
+          onSubmit={(values, rooms) => {
             // Stage and open the confirmation preview (consistent with Add).
             setError(null);
             setPending(values);
+            setPendingRooms(rooms);
           }}
         />
       </EditModalShell>
@@ -151,7 +177,7 @@ export function PropertyEditModal({
             setPending(null);
           }}
           property={previewProperty}
-          units={[]}
+          units={previewUnits}
           eyebrow="Confirm changes"
           confirmLabel="Confirm & save"
           onConfirm={handleConfirm}

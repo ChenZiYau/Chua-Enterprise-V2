@@ -117,11 +117,27 @@ export interface Unit {
   tenant_name?: string | null;
   rental_rate?: number | null;
   electricity_free_units: number;
+  /** Security deposit expressed as a number of months' rent (e.g. 1, 2). Drives
+   *  the default deposit amount (rental_rate × deposit_months). */
+  deposit_months?: number | null;
+  /** Deposit collected from the tenant, in RM. When null, the Deposit page falls
+   *  back to the computed rental_rate × deposit_months. Stored so an owner can
+   *  override the computed figure (e.g. a negotiated or partial deposit). */
+  deposit_amount?: number | null;
   /** Per-room photo URLs for the public share gallery, newline/comma separated. */
   gallery_urls?: string | null;
   /** Owner-pasted external link for this room (e.g. a Dropbox/Drive folder).
    *  When set, the Share Room menu copies this for the room. */
   share_url?: string | null;
+}
+
+/** A room/unit as entered in the property add/edit form. `id` is present for
+ *  existing units being edited; absent for newly added rooms. */
+export interface RoomInput {
+  id?: string;
+  name: string;
+  rental_rate: number | null;
+  tenant_name: string | null;
 }
 
 export interface RevenueEntry {

@@ -9,6 +9,13 @@ import type {
 } from "@/types/rental";
 import { Select } from "@/components/ui/Select";
 import { CoverImageInput } from "@/components/property/CoverImageInput";
+import {
+  RoomManager,
+  blankRoom,
+  draftsToRoomInputs,
+  type RoomDraft,
+} from "@/components/property/RoomManager";
+import type { RoomInput } from "@/types/rental";
 
 export type PropertyFormValues = Omit<Property, "id" | "slug">;
 
@@ -116,7 +123,7 @@ export function AddPropertyForm({
   saving,
 }: {
   submitLabel: string;
-  onSubmit: (values: PropertyFormValues) => void | Promise<void>;
+  onSubmit: (values: PropertyFormValues, rooms?: RoomInput[]) => void | Promise<void>;
   onCancel?: () => void;
   /** Receive the cropped/uploaded cover image Blob to store on save (or null). */
   onCoverFileChange?: (file: File | null) => void;
@@ -124,6 +131,8 @@ export function AddPropertyForm({
 }) {
   const [values, setValues] = useState<PropertyFormValues>(defaultValues);
   const [errors, setErrors] = useState<Errors>({});
+  const [rooms, setRooms] = useState<RoomDraft[]>(() => [blankRoom()]);
+  const [roomsError, setRoomsError] = useState<string | null>(null);
 
   function set<K extends keyof PropertyFormValues>(key: K, val: PropertyFormValues[K]) {
     setValues((v) => ({ ...v, [key]: val }));
@@ -148,8 +157,26 @@ export function AddPropertyForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const total = Math.max(0, values.total_units || 0);
-    const rented = Math.min(total, Math.max(0, values.rented_units || 0));
+    const isRoom = values.rental_model === "room_rental";
+    const roomInputs = draftsToRoomInputs(rooms);
+
+    let total: number;
+    let rented: number;
+    if (isRoom) {
+      if (roomInputs.length === 0) {
+        setRoomsError("Add at least one room.");
+        return;
+      }
+      if (roomInputs.some((r) => !r.name)) {
+        setRoomsError("Every room needs a name.");
+        return;
+      }
+      total = roomInputs.length;
+      rented = roomInputs.filter((r) => (r.tenant_name ?? "") !== "").length;
+    } else {
+      total = Math.max(0, values.total_units || 0);
+      rented = Math.min(total, Math.max(0, values.rented_units || 0));
+    }
     const cleaned = { ...values, total_units: total, rented_units: rented };
 
     const found = validate(cleaned);
@@ -158,7 +185,7 @@ export function AddPropertyForm({
       return;
     }
     // short_name is no longer captured separately — default it to the name.
-    onSubmit({ ...cleaned, short_name: cleaned.name });
+    onSubmit({ ...cleaned, short_name: cleaned.name }, isRoom ? roomInputs : undefined);
   }
 
   const isWhole = values.rental_model === "whole_unit";
@@ -221,26 +248,22 @@ export function AddPropertyForm({
             hint={
               isWhole
                 ? "Whole-unit properties always have one rentable unit."
-                : "Total rooms is the number of rentable rooms in this property."
+                : "Add each rentable room with its base rent and tenant. The tenant can be left blank for a vacant room."
             }
           >
-            <div className="flex flex-col gap-4">
-              <Row
-                label={isWhole ? "Total Units" : "Total Rooms"}
-                required
-                error={errors.total_units}
-              >
-                <input
-                  type="number"
-                  min={1}
-                  disabled={isWhole}
-                  className={inputClass}
-                  style={{ ...fieldStyle(!!errors.total_units), opacity: isWhole ? 0.6 : 1 }}
-                  value={values.total_units}
-                  onChange={(e) => set("total_units", Number(e.target.value) || 0)}
-                />
-              </Row>
-              {isWhole ? (
+            {isWhole ? (
+              <div className="flex flex-col gap-4">
+                <Row label="Total Units">
+                  <input
+                    type="number"
+                    min={1}
+                    disabled
+                    className={inputClass}
+                    style={{ ...fieldStyle(), opacity: 0.6 }}
+                    value={1}
+                    readOnly
+                  />
+                </Row>
                 <Row label="Occupancy">
                   <Select
                     value={values.rented_units > 0 ? "occupied" : "vacant"}
@@ -251,20 +274,17 @@ export function AddPropertyForm({
                     onChange={(value) => set("rented_units", value === "occupied" ? 1 : 0)}
                   />
                 </Row>
-              ) : (
-                <Row label="Rented Rooms">
-                  <input
-                    type="number"
-                    min={0}
-                    max={values.total_units}
-                    className={inputClass}
-                    style={fieldStyle()}
-                    value={values.rented_units}
-                    onChange={(e) => set("rented_units", Number(e.target.value) || 0)}
-                  />
-                </Row>
-              )}
-            </div>
+              </div>
+            ) : (
+              <RoomManager
+                rooms={rooms}
+                onChange={(r) => {
+                  setRooms(r);
+                  setRoomsError(null);
+                }}
+                error={roomsError ?? undefined}
+              />
+            )}
           </Group>
         </div>
 

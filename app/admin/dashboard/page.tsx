@@ -13,7 +13,7 @@ import {
   type UnitRow,
   type TenantRow,
   type MaintenanceRow,
-} from "@/lib/notion";
+} from "@/lib/db";
 import { buildDashboard } from "@/lib/dashboard";
 
 export const revalidate = 30;
@@ -45,13 +45,13 @@ export default async function AdminOverviewPage() {
       <div className="p-4 sm:p-6 lg:p-8">
         <div className="ui-card p-12 text-center max-w-xl mx-auto">
           <p className="text-base font-semibold" style={{ color: "var(--danger)" }}>
-            Couldn&apos;t load the dashboard from Notion.
+            Couldn&apos;t load the dashboard from the database.
           </p>
           <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
             {loadError}
           </p>
           <p className="text-xs mt-4" style={{ color: "var(--text-faint)" }}>
-            Check the Notion integration token and database sharing, then refresh.
+            Check the Supabase connection and credentials, then refresh.
           </p>
         </div>
       </div>

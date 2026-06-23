@@ -7,13 +7,14 @@ import { useRental } from "@/context/RentalContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { RENTAL_MODEL_LABEL, STATUS_LABEL, type Property } from "@/types/rental";
 import { PROPERTY_FALLBACK_IMAGE } from "@/data/rentalData";
-import { RevenueEntryDrawer } from "@/components/property/RevenueEntryDrawer";
-import { RoomCalendarDrawer } from "@/components/property/RoomCalendarDrawer";
 import { PropertyEditModal } from "@/components/property/PropertyEditModal";
-import { ExpenseEntryDrawer } from "@/components/property/ExpenseEntryDrawer";
+import { PropertyRevenueTab } from "@/components/property/PropertyRevenueTab";
+import { PropertyExpensesTab } from "@/components/property/PropertyExpensesTab";
+import { PropertyInvoiceTab } from "@/components/property/PropertyInvoiceTab";
+import { PropertyImagesTab } from "@/components/property/PropertyImagesTab";
 
 function formatMYR(value: number | undefined) {
-  if (value === undefined || value === null) return "-";
+  if (value === undefined || value === null) return "RM -";
   return new Intl.NumberFormat("en-MY", {
     style: "currency", currency: "MYR", maximumFractionDigits: 0,
   }).format(value);
@@ -27,10 +28,13 @@ function statusChipClass(status: Property["status"]) {
   }
 }
 
-type CalendarState = { open: false } | { open: true; unitId: string; roomLabel: string };
-type DrawerState =
-  | { open: false }
-  | { open: true; unitId: string; month?: number; year?: number };
+type TabKey = "revenue" | "expenses" | "invoice" | "images";
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "revenue", label: "Revenue" },
+  { key: "expenses", label: "Expenses" },
+  { key: "invoice", label: "Invoice" },
+  { key: "images", label: "Images" },
+];
 
 export default function PropertyDetailPage({
   params,
@@ -45,11 +49,9 @@ export default function PropertyDetailPage({
   const property = getProperty(id);
   const units = getUnitsForProperty(id);
   const [imgSrc, setImgSrc] = useState(property?.image_url || PROPERTY_FALLBACK_IMAGE);
-  const [calendar, setCalendar] = useState<CalendarState>({ open: false });
-  const [drawer, setDrawer] = useState<DrawerState>({ open: false });
   const [editOpen, setEditOpen] = useState(false);
-  const [expenseOpen, setExpenseOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>("revenue");
 
   if (!property) {
     return (
@@ -64,15 +66,12 @@ export default function PropertyDetailPage({
     );
   }
 
-  const now = new Date();
-  const curYear = now.getFullYear();
-
+  const curYear = new Date().getFullYear();
   const ytd = getPropertyYTD(id, curYear);
   const rentedCount = units.filter((u) => u.is_rented).length;
-  const total = units.length;
-  const occPct = total > 0 ? Math.round((rentedCount / total) * 100) : 0;
+  const totalUnits = units.length;
   const isWhole = property.rental_model === "whole_unit";
-  const unitWord = isWhole ? "unit" : "rooms";
+  const occupied = rentedCount > 0;
 
   async function handleDelete() {
     const { confirmed } = await confirm({
@@ -87,193 +86,143 @@ export default function PropertyDetailPage({
       await softDeleteProperty(property!.id);
       router.push("/admin/properties");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not remove property from Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not remove property from the database.");
     }
   }
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-8">
-      <BackLink href="/admin/properties" label="Back to Properties" />
-
-      {actionError && (
-        <div className="ui-card px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: "var(--danger)", background: "rgba(211,84,84,0.08)" }}>
-          <p className="text-sm" style={{ color: "var(--danger)" }}>{actionError}</p>
-          <button type="button" className="ui-btn" onClick={() => setActionError(null)}>Dismiss</button>
+    <div className="flex flex-col">
+      {/* Sticky header */}
+      <header
+        className="sticky top-0 z-20 px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4 border-b"
+        style={{ background: "var(--surface)", borderColor: "var(--border-soft)" }}
+      >
+        <div className="min-w-0">
+          <BackLink href="/admin/properties" label="Property" />
+          <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
+            {property.name} — property details
+          </p>
         </div>
-      )}
+        <button type="button" className="ui-btn shrink-0" onClick={handleDelete}>
+          Move to Trash
+        </button>
+      </header>
 
-      {/* Hero */}
-      <header className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6 items-start">
-        <div
-          className="relative aspect-[4/3] md:aspect-square w-full rounded-xl overflow-hidden"
-          style={{ background: "var(--surface-subtle)" }}
-        >
+      <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex flex-col gap-6">
+        {actionError && (
+          <div className="ui-card px-4 py-3 flex items-center justify-between gap-3" style={{ borderColor: "var(--danger)", background: "rgba(211,84,84,0.08)" }}>
+            <p className="text-sm" style={{ color: "var(--danger)" }}>{actionError}</p>
+            <button type="button" className="ui-btn" onClick={() => setActionError(null)}>Dismiss</button>
+          </div>
+        )}
+
+        {/* Cover image with overlaid property details */}
+        <section className="relative w-full rounded-lg overflow-hidden" style={{ background: "var(--surface-subtle)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imgSrc}
             alt={property.name}
-            className="w-full h-full object-cover"
+            className="w-full h-[240px] sm:h-[300px] lg:h-[340px] object-cover"
             onError={() => setImgSrc(PROPERTY_FALLBACK_IMAGE)}
           />
-        </div>
-
-        <div className="flex flex-col gap-4 min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* Gradient so the overlaid text stays legible over any image. */}
+          <div
+            className="absolute inset-0"
+            style={{ background: "linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.25) 45%, rgba(0,0,0,0.05) 100%)" }}
+          />
+          <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6 flex items-end justify-between gap-4">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="ui-chip">{RENTAL_MODEL_LABEL[property.rental_model]}</span>
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white drop-shadow">
+                {property.name}
+              </h1>
+              <p className="text-sm mt-1 text-white/85 drop-shadow">
+                {property.address}
+                {property.city ? `, ${property.city}` : ""}
+                {property.state ? `, ${property.state}` : ""}
+                {property.postcode ? ` ${property.postcode}` : ""}
+              </p>
+              <div className="flex items-center gap-2 flex-wrap mt-3">
+                <span className="ui-chip" style={{ background: "rgba(255,255,255,0.18)", color: "#fff" }}>
+                  {RENTAL_MODEL_LABEL[property.rental_model]}
+                </span>
                 <span className={"ui-chip " + statusChipClass(property.status)}>
                   {STATUS_LABEL[property.status]}
                 </span>
               </div>
-              <h1 className="text-2xl font-semibold mt-3 tracking-tight" style={{ color: "var(--text-primary)" }}>
-                {property.name}
-              </h1>
-              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>{property.address}</p>
-              <p className="text-sm" style={{ color: "var(--text-faint)" }}>
-                {property.city}{property.state ? `, ${property.state}` : ""}{property.postcode ? ` ${property.postcode}` : ""}
-              </p>
             </div>
-            <div className="flex flex-wrap gap-2 shrink-0">
-              <button type="button" className="ui-btn ui-btn-primary" onClick={() => setExpenseOpen(true)}>+ Add Expense</button>
-              <button type="button" className="ui-btn" onClick={() => setEditOpen(true)}>Edit</button>
-              <button type="button" className="ui-btn" onClick={handleDelete}>Move to Trash</button>
-            </div>
+            <button type="button" className="ui-btn shrink-0" onClick={() => setEditOpen(true)}>
+              Edit
+            </button>
           </div>
-          {property.description && (
-            <p className="text-sm leading-relaxed max-w-2xl" style={{ color: "var(--text-secondary)" }}>
-              {property.description}
-            </p>
-          )}
-        </div>
-      </header>
+        </section>
 
-      {/* KPI strip */}
-      <section
-        className="grid grid-cols-2 md:grid-cols-4 gap-px rounded-xl overflow-hidden"
-        style={{ background: "var(--border-soft)", border: "1px solid var(--border-soft)" }}
-      >
-        {isWhole ? (
+        {/* Stat cards: status · revenue · expenses · net PnL */}
+        <section
+          className="grid grid-cols-2 md:grid-cols-4 gap-px rounded-lg overflow-hidden"
+          style={{ background: "var(--border-soft)", border: "1px solid var(--border-soft)" }}
+        >
           <Stat
             label="Status"
-            value={rentedCount > 0 ? "Occupied" : "Vacant"}
-            valueColor={rentedCount > 0 ? "var(--success)" : "var(--warning)"}
+            value={occupied ? "OCCUPIED" : "VACANT"}
+            valueColor={occupied ? "var(--success)" : "var(--warning)"}
+            sub={isWhole ? undefined : `${rentedCount} of ${totalUnits} rooms`}
           />
-        ) : (
-          <Stat label="Occupancy" value={`${occPct}%`} sub={`${rentedCount} of ${total} ${unitWord}`} />
-        )}
-        <Stat label={`Revenue ${curYear}`} value={formatMYR(ytd.revenue)} />
-        <Stat label={`Expenses ${curYear}`} value={formatMYR(ytd.expenses)} />
-        <Stat label="Net YTD" value={formatMYR(ytd.net)} valueColor={ytd.net >= 0 ? "var(--success)" : "var(--danger)"} />
-      </section>
+          <Stat label={`Revenue ${curYear}`} value={formatMYR(ytd.revenue)} />
+          <Stat label={`Expenses ${curYear}`} value={formatMYR(ytd.expenses)} />
+          <Stat
+            label="Net PnL"
+            value={formatMYR(ytd.net)}
+            valueColor={ytd.net >= 0 ? "var(--success)" : "var(--danger)"}
+          />
+        </section>
 
-      {/* Rooms / Units */}
-      <section className="flex flex-col gap-4">
-        <SectionHeader
-          eyebrow={isWhole ? "Whole Unit" : "Rooms"}
-          title={isWhole ? "Rented as one unit" : `${total} rooms in this property`}
-          hint="Revenue is recorded per room or unit. Click a room to view the monthly calendar."
-          action={
-            units.length > 0 ? (
+        {/* Tabs */}
+        <nav
+          className="grid grid-cols-4 rounded-lg overflow-hidden border"
+          style={{ borderColor: "var(--border-soft)" }}
+        >
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
               <button
+                key={t.key}
                 type="button"
-                className="ui-btn ui-btn-primary"
-                onClick={() => {
-                  const first = units[0];
-                  setDrawer({ open: true, unitId: first.id });
+                onClick={() => setTab(t.key)}
+                className="px-4 py-3 text-sm font-medium transition border-l first:border-l-0"
+                style={{
+                  borderColor: "var(--border-soft)",
+                  background: active ? "var(--surface-muted)" : "var(--surface)",
+                  color: active ? "var(--text-primary)" : "var(--text-muted)",
+                  boxShadow: active ? "inset 0 -2px 0 var(--accent)" : "none",
                 }}
               >
-                + Add Entry
+                {t.label}
               </button>
-            ) : null
-          }
-        />
+            );
+          })}
+        </nav>
 
-        {units.length === 0 ? (
-          <EmptyRow text="No rooms recorded yet. Edit the property to set up rooms." />
-        ) : (
-          <div className="ui-card overflow-hidden">
-            <ul>
-              {units.map((unit, i) => (
-                <li
-                  key={unit.id}
-                  style={{ borderTop: i === 0 ? "none" : "1px solid var(--border-soft)" }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setCalendar({ open: true, unitId: unit.id, roomLabel: unit.name })}
-                    className="w-full flex items-center gap-4 px-5 py-3.5 text-left transition hover:bg-[var(--surface-muted)]"
-                  >
-                    <div
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
-                      style={{
-                        background: unit.is_rented ? "var(--accent-soft)" : "var(--surface-muted)",
-                        color: unit.is_rented ? "var(--accent)" : "var(--text-faint)",
-                      }}
-                    >
-                      {unit.label}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                        {unit.name}
-                      </p>
-                      <p className="text-xs" style={{ color: "var(--text-faint)" }}>
-                        {unit.tenant_name ?? "Vacant"}
-                        {unit.rental_rate ? ` - RM ${unit.rental_rate}/mo` : ""}
-                        {" - click to view monthly rent"}
-                      </p>
-                    </div>
-                    <span className={"ui-chip " + (unit.is_rented ? "ui-chip-success" : "")}>
-                      {unit.is_rented ? "Rented" : "Available"}
-                    </span>
-                    <span aria-hidden className="text-base" style={{ color: "var(--text-faint)" }}>&#8594;</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
+        {/* Tab content — each scoped to this property */}
+        {tab === "revenue" && <PropertyRevenueTab property={property} />}
+        {tab === "expenses" && <PropertyExpensesTab property={property} />}
+        {tab === "invoice" && <PropertyInvoiceTab property={property} />}
+        {tab === "images" && <PropertyImagesTab property={property} />}
 
-      {/* Calendar drawer - click room row -> month grid */}
-      <RoomCalendarDrawer
-        open={calendar.open}
-        onClose={() => setCalendar({ open: false })}
-        propertyName={property.name}
-        roomLabel={calendar.open ? calendar.roomLabel : ""}
-        unitId={calendar.open ? calendar.unitId : ""}
-        onLogMonth={(monthIdx, year) => {
-          if (!calendar.open) return;
-          const { unitId } = calendar;
-          setCalendar({ open: false });
-          setDrawer({ open: true, unitId, month: monthIdx, year });
-        }}
-      />
+        {/* Footer */}
+        <footer
+          className="mt-2 pt-4 text-center text-xs border-t"
+          style={{ color: "var(--text-faint)", borderColor: "var(--border-soft)" }}
+        >
+          {property.name} · {RENTAL_MODEL_LABEL[property.rental_model]} · {totalUnits}{" "}
+          {isWhole ? "unit" : "rooms"}
+        </footer>
+      </div>
 
-      {/* Revenue drawer - same form used on the Revenue ledger */}
-      <RevenueEntryDrawer
-        open={drawer.open}
-        onClose={() => setDrawer({ open: false })}
-        propertyId={property.id}
-        lockProperty
-        unitId={drawer.open ? drawer.unitId : undefined}
-        preselectedMonth={drawer.open ? drawer.month : undefined}
-        preselectedYear={drawer.open ? drawer.year : undefined}
-      />
-
-      {/* Edit modal - the same reusable form used to add a property */}
+      {/* Edit modal — the same reusable form used to add a property */}
       <PropertyEditModal
         open={editOpen}
         onClose={() => setEditOpen(false)}
         property={property}
-      />
-
-      {/* Expense drawer - itemized, multi-line expense entry */}
-      <ExpenseEntryDrawer
-        open={expenseOpen}
-        onClose={() => setExpenseOpen(false)}
-        propertyName={property.name}
-        propertyId={property.id}
       />
     </div>
   );
@@ -293,27 +242,6 @@ function Stat({ label, value, sub, valueColor }: { label: string; value: string;
       <p className="text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-faint)" }}>{label}</p>
       <p className="text-xl font-semibold mt-1.5 tabular-nums" style={{ color: valueColor ?? "var(--text-primary)" }}>{value}</p>
       {sub && <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{sub}</p>}
-    </div>
-  );
-}
-
-function SectionHeader({ eyebrow, title, hint, action }: { eyebrow: string; title: string; hint?: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>{eyebrow}</p>
-        <h3 className="text-base font-semibold mt-1" style={{ color: "var(--text-primary)" }}>{title}</h3>
-        {hint && <p className="text-xs mt-1.5 max-w-2xl leading-relaxed" style={{ color: "var(--text-muted)" }}>{hint}</p>}
-      </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
-  );
-}
-
-function EmptyRow({ text }: { text: string }) {
-  return (
-    <div className="rounded-lg px-5 py-6 text-center text-xs" style={{ color: "var(--text-muted)", border: "1px dashed var(--border-strong)", background: "var(--surface-muted)" }}>
-      {text}
     </div>
   );
 }

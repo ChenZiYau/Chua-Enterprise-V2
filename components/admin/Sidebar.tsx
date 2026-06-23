@@ -11,6 +11,7 @@ import {
   IconRevenue,
   IconExpenses,
   IconInvoices,
+  IconDeposit,
   IconTenants,
   IconMaintenance,
   IconReports,
@@ -44,6 +45,7 @@ const sections: NavSection[] = [
       { label: "Revenue", href: "/admin/revenue", icon: IconRevenue },
       { label: "Expenses", href: "/admin/expenses", icon: IconExpenses },
       { label: "Invoices", href: "/admin/invoices", icon: IconInvoices },
+      { label: "Deposits", href: "/admin/deposits", icon: IconDeposit },
     ],
   },
   {
@@ -112,7 +114,11 @@ export function Sidebar() {
           (mini ? "flex-col items-center gap-3" : "items-center justify-between gap-2")
         }
       >
-        <div className={"flex items-center min-w-0 " + (mini ? "" : "gap-2.5 px-0.5")}>
+        <Link
+          href="/admin/properties"
+          aria-label="Go to Properties"
+          className={"flex items-center min-w-0 rounded-lg transition hover:opacity-80 " + (mini ? "" : "gap-2.5 px-0.5")}
+        >
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
             style={{ background: "var(--accent)" }}
@@ -125,7 +131,7 @@ export function Sidebar() {
           {!mini && (
             <span className="text-white font-semibold tracking-tight truncate">Chua Enterprise</span>
           )}
-        </div>
+        </Link>
 
         {/* Collapse / expand toggle - only meaningful on the desktop rail */}
         {onToggle && (

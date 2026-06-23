@@ -6,7 +6,7 @@ import {
   getExpenses,
   getTenants,
   getMaintenance,
-} from "@/lib/notion";
+} from "@/lib/db";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = "llama-3.3-70b-versatile";
@@ -49,7 +49,7 @@ async function buildContext(): Promise<string> {
     .join("\n");
 
   return [
-    `PORTFOLIO SNAPSHOT (live from Notion):`,
+    `PORTFOLIO SNAPSHOT (live from the database):`,
     `Properties: ${properties.length}. Units: ${units.length} (${rented} rented, ${vacant.length} vacant). Tenants: ${tenants.length}.`,
     `Total revenue recorded: ${myr(totalRevenue)}. Total expenses: ${myr(totalExpenses)}. Net: ${myr(totalRevenue - totalExpenses)}.`,
     `Outstanding payments: ${outstanding.length} entries totalling ${myr(outstanding.reduce((s, r) => s + r.totalAmount, 0))}.`,

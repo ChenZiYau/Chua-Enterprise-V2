@@ -121,7 +121,7 @@ export function PropertyExpensesTab({ property }: { property: Property }) {
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {isRoom && rooms.length > 0 && (
               <Select
-                className="w-auto min-w-[150px]"
+                className="w-auto min-w-[200px]"
                 ariaLabel="Filter by room"
                 value={filterUnit}
                 onChange={setFilterUnit}

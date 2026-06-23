@@ -136,7 +136,7 @@ export function EntryForm({ kind }: { kind: EntryKind }) {
       setSaved(true);
       setTimeout(() => router.push(backHref), 700);
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Could not save ${kind} to Notion.`);
+      setError(err instanceof Error ? err.message : `Could not save ${kind} to the database.`);
     } finally {
       setSaving(false);
     }

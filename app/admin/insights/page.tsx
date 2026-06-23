@@ -30,7 +30,7 @@ export default function InsightsPage() {
     units,
     visibleProperties,
     getPropertyYTD,
-    notionLoadError,
+    loadError,
   } = useRental();
 
   const data = useMemo(() => {
@@ -160,15 +160,15 @@ export default function InsightsPage() {
     };
   }, [revenueEntries, expenseEntries, maintenanceEntries, tenants, units, visibleProperties, getPropertyYTD]);
 
-  if (notionLoadError) {
+  if (loadError) {
     return (
       <div className="px-4 sm:px-6 lg:px-8 py-8">
         <div className="ui-card p-12 text-center max-w-xl mx-auto">
           <p className="text-base font-semibold" style={{ color: "var(--danger)" }}>
-            Couldn&apos;t load insights from Notion.
+            Couldn&apos;t load insights from the database.
           </p>
           <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
-            {notionLoadError}
+            {loadError}
           </p>
         </div>
       </div>

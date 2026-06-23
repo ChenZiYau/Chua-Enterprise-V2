@@ -1,6 +1,7 @@
 // Maps the app's snake_case domain entities to the camelCase field objects
-// the /api/notion write route expects. Inter-db links are stored as names,
-// so callers pass resolved property / unit names alongside the patch.
+// the /api/db write route expects. Inter-table links are passed as names and
+// resolved to foreign keys server-side (see lib/db.ts), so callers pass the
+// resolved property / unit names alongside the patch.
 
 import { MONTHS } from "@/types/rental";
 import type { ExpenseEntry, Property, RevenueEntry, Tenant, Unit } from "@/types/rental";
@@ -68,6 +69,8 @@ export function unitCreateFields(u: Unit, names: Names) {
     tenantName: u.tenant_name ?? null,
     rentalRate: u.rental_rate ?? null,
     electricityFreeUnits: u.electricity_free_units,
+    depositMonths: u.deposit_months ?? null,
+    depositAmount: u.deposit_amount ?? null,
     galleryUrls: u.gallery_urls ?? null,
     shareUrl: u.share_url ?? null,
   };
@@ -83,6 +86,8 @@ export function unitPatchFields(patch: Partial<Unit>, names: Names) {
   if ("tenant_name" in patch) f.tenantName = patch.tenant_name ?? null;
   if ("rental_rate" in patch) f.rentalRate = patch.rental_rate ?? null;
   if ("electricity_free_units" in patch) f.electricityFreeUnits = patch.electricity_free_units;
+  if ("deposit_months" in patch) f.depositMonths = patch.deposit_months ?? null;
+  if ("deposit_amount" in patch) f.depositAmount = patch.deposit_amount ?? null;
   if ("gallery_urls" in patch) f.galleryUrls = patch.gallery_urls ?? null;
   if ("share_url" in patch) f.shareUrl = patch.share_url ?? null;
   return f;

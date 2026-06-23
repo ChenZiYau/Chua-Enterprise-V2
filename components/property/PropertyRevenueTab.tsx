@@ -99,7 +99,7 @@ export function PropertyRevenueTab({ property }: { property: Property }) {
     try {
       await deleteRevenueEntry(id);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Could not delete revenue from Notion.");
+      setActionError(err instanceof Error ? err.message : "Could not delete revenue from the database.");
     }
   }
 
@@ -131,7 +131,7 @@ export function PropertyRevenueTab({ property }: { property: Property }) {
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {isRoom && rooms.length > 0 && (
               <Select
-                className="w-auto min-w-[150px]"
+                className="w-auto min-w-[200px]"
                 ariaLabel="Filter by room"
                 value={filterUnit}
                 onChange={setFilterUnit}

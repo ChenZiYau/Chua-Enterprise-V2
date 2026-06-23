@@ -61,7 +61,7 @@ export function Header() {
   const router = useRouter();
   const { title, subtitle } = resolveTitle(pathname);
   const { toggle } = useMobileNav();
-  const { visibleProperties, units, tenants, revenueEntries, maintenanceEntries, notionLoadError, getUnit } = useRental();
+  const { visibleProperties, units, tenants, revenueEntries, maintenanceEntries, loadError, getUnit } = useRental();
 
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -691,9 +691,9 @@ export function Header() {
           to   { opacity: 1; transform: translateX(0)    scale(1); }
         }
       `}</style>
-      {notionLoadError && (
+      {loadError && (
         <div className="basis-full rounded-lg px-3 py-2 text-xs" style={{ background: "rgba(211,84,84,0.08)", border: "1px solid var(--danger)", color: "var(--danger)" }}>
-          Notion data did not load: {notionLoadError}
+          Data did not load: {loadError}
         </div>
       )}
     </header>
