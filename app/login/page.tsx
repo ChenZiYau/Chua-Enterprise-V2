@@ -1,12 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
+  // Create the Supabase client lazily, only in the browser. Doing this during
+  // render (e.g. useMemo) runs it at static-prerender time, where the public
+  // env vars aren't available and the constructor throws.
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+  const getSupabase = () => (supabaseRef.current ??= createClient());
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -16,17 +20,19 @@ export default function LoginPage() {
 
   // If already signed in, skip straight to the admin.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) router.replace("/admin");
-    });
-  }, [router, supabase]);
+    getSupabase()
+      .auth.getUser()
+      .then(({ data }) => {
+        if (data.user) router.replace("/admin");
+      });
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setSubmitting(true);
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { error: signInError } = await getSupabase().auth.signInWithPassword({
       email: email.trim(),
       password,
     });
