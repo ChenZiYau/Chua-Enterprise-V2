@@ -27,7 +27,8 @@
       "Bash(rm -f /tmp/rp.html /tmp/roompage.html /tmp/dev.out)",
       "Bash(echo \"EXIT:$?\")",
       "mcp__plugin_supabase_supabase__list_projects",
-      "mcp__plugin_supabase_supabase__get_advisors"
+      "mcp__plugin_supabase_supabase__get_advisors",
+      "WebFetch(domain:supabase.com)"
     ]
   },
   "enabledMcpjsonServers": [

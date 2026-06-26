@@ -1,32 +1,45 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { isAuthed, signIn } from "@/lib/auth";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@chua.co");
+  const supabase = useMemo(() => createClient(), []);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   // If already signed in, skip straight to the admin.
   useEffect(() => {
-    if (isAuthed()) router.replace("/admin");
-  }, [router]);
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) router.replace("/admin");
+    });
+  }, [router, supabase]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError("");
     setSubmitting(true);
-    signIn();
-    setTimeout(() => router.push("/admin"), 300);
-  }
 
-  function handleGuest() {
-    signIn();
-    router.push("/admin");
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (signInError) {
+      setError("Incorrect email or password.");
+      setPassword("");
+      setSubmitting(false);
+      return;
+    }
+
+    router.replace("/admin");
+    router.refresh();
   }
 
   return (
@@ -142,6 +155,7 @@ export default function LoginPage() {
                 type="email"
                 required
                 autoComplete="email"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-3 py-2.5 text-sm rounded-lg border outline-none transition"
@@ -220,6 +234,16 @@ export default function LoginPage() {
               </span>
             </label>
 
+            {error && (
+              <p
+                role="alert"
+                className="text-xs -mt-2"
+                style={{ color: "var(--danger, #dc2626)" }}
+              >
+                {error}
+              </p>
+            )}
+
             <button
               type="submit"
               disabled={submitting}
@@ -228,22 +252,6 @@ export default function LoginPage() {
               {submitting ? "Signing in..." : "Sign in"}
             </button>
           </form>
-
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px" style={{ background: "var(--border-soft)" }} />
-            <span className="text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-faint)" }}>
-              or
-            </span>
-            <div className="flex-1 h-px" style={{ background: "var(--border-soft)" }} />
-          </div>
-
-          <button
-            type="button"
-            onClick={handleGuest}
-            className="ui-btn w-full !py-2.5"
-          >
-            Continue as guest
-          </button>
 
           <p
             className="text-[11px] text-center mt-2"

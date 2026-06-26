@@ -34,9 +34,10 @@ export default function SettingsPage() {
   const router = useRouter();
   const { preference, resolved, setPreference } = useTheme();
 
-  function handleSignOut() {
-    signOut();
+  async function handleSignOut() {
+    await signOut();
     router.replace("/login");
+    router.refresh();
   }
 
   return (

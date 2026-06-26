@@ -99,9 +99,10 @@ export function Sidebar() {
     });
   }
 
-  function handleLogout() {
-    signOut();
+  async function handleLogout() {
+    await signOut();
     router.replace("/login");
+    router.refresh();
   }
 
   // `mini` collapses labels to an icon-only rail (desktop only).
