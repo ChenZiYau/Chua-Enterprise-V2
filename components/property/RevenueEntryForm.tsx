@@ -20,6 +20,9 @@ const inputCls = "w-full px-3 py-2.5 text-sm rounded-lg border outline-none tran
 const inputStyle: React.CSSProperties = { borderColor: "var(--border-soft)", background: "var(--surface)", color: "var(--text-primary)" };
 const labelCls = "block text-[10px] font-semibold uppercase tracking-[0.14em] mb-1.5";
 const labelStyle: React.CSSProperties = { color: "var(--text-faint)" };
+// Horizontal field row: label on the left, control on the right (Quick Entry).
+const rowCls = "grid grid-cols-[128px_1fr] items-start gap-3";
+const rowLabelCls = "text-[10px] font-semibold uppercase tracking-[0.14em] pt-2.5 leading-tight";
 
 function fmt(v: number) {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR", minimumFractionDigits: 2 }).format(v);
@@ -268,22 +271,24 @@ export function RevenueEntryForm({
   ) : null;
 
   const chargesSection = (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {/* Base Rent — amount defaults to the unit's base rent */}
-      <div>
-        <label className={labelCls} style={labelStyle}>
+      <div className={rowCls}>
+        <label className={rowLabelCls} style={labelStyle}>
           {prorate ? "Base rent — full month (RM)" : "Base Rent (RM)"}
         </label>
-        <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls}
-          style={errors.rental ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
-          value={rental} onChange={onText(setRental)} />
-        {errors.rental && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.rental}</p>}
-        <label className="flex items-center gap-1.5 mt-2 cursor-pointer select-none" title="Prorate for a mid-month move-in">
-          <input type="checkbox" checked={prorate}
-            onChange={(e) => { setProrate(e.target.checked); if (saved) setSaved(false); }}
-            style={{ accentColor: "var(--accent)", width: 14, height: 14 }} />
-          <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Prorate (mid-month start)</span>
-        </label>
+        <div>
+          <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls}
+            style={errors.rental ? { ...inputStyle, borderColor: "var(--danger)" } : inputStyle}
+            value={rental} onChange={onText(setRental)} />
+          {errors.rental && <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>{errors.rental}</p>}
+          <label className="flex items-center gap-1.5 mt-2 cursor-pointer select-none" title="Prorate for a mid-month move-in">
+            <input type="checkbox" checked={prorate}
+              onChange={(e) => { setProrate(e.target.checked); if (saved) setSaved(false); }}
+              style={{ accentColor: "var(--accent)", width: 14, height: 14 }} />
+            <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Prorate (mid-month start)</span>
+          </label>
+        </div>
       </div>
 
       {prorate && (
@@ -322,28 +327,30 @@ export function RevenueEntryForm({
         </div>
       )}
       {/* Electricity Usage — meter reading; math calculation shown below */}
-      <div>
-        <label className={labelCls} style={labelStyle}>Electricity Usage (kWh)</label>
-        <input type="number" inputMode="decimal" min={0} step="1" placeholder="e.g. 3800" className={inputCls} style={inputStyle}
-          value={elecUnits} onChange={onText(setElecUnits)} />
-        {reading > 0 && prevReading != null && elecBill ? (
-          <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-            {reading} − {prevReading} (last month) = {elecUsage} kWh − {freeUnits} free = {elecBill.chargeableUnits} kWh &#8594; <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
-          </p>
-        ) : reading > 0 && prevReading == null ? (
-          <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
-            First reading for this room — saved as the baseline. The charge starts from next month&apos;s reading.
-          </p>
-        ) : (
-          <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
-            Enter this month&apos;s meter reading{prevReading != null ? ` (last month: ${prevReading})` : ""}. Last month and {freeUnits} free kWh are subtracted automatically.
-          </p>
-        )}
+      <div className={rowCls}>
+        <label className={rowLabelCls} style={labelStyle}>Electricity Usage (kWh)</label>
+        <div>
+          <input type="number" inputMode="decimal" min={0} step="1" placeholder="e.g. 3800" className={inputCls} style={inputStyle}
+            value={elecUnits} onChange={onText(setElecUnits)} />
+          {reading > 0 && prevReading != null && elecBill ? (
+            <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
+              {reading} − {prevReading} (last month) = {elecUsage} kWh − {freeUnits} free = {elecBill.chargeableUnits} kWh &#8594; <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{fmt(elecBill.chargeAmount)}</span>
+            </p>
+          ) : reading > 0 && prevReading == null ? (
+            <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
+              First reading for this room — saved as the baseline. The charge starts from next month&apos;s reading.
+            </p>
+          ) : (
+            <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>
+              Enter this month&apos;s meter reading{prevReading != null ? ` (last month: ${prevReading})` : ""}. Last month and {freeUnits} free kWh are subtracted automatically.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Other Charges — amount defaults to zero */}
-      <div>
-        <label className={labelCls} style={labelStyle}>Other Charges (RM)</label>
+      <div className={rowCls}>
+        <label className={rowLabelCls} style={labelStyle}>Other Charges (RM)</label>
         <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" className={inputCls} style={inputStyle}
           value={otherCharges} onChange={onText(setOtherCharges)} />
       </div>
@@ -400,9 +407,9 @@ export function RevenueEntryForm({
     </div>
   ) : null;
   const notesField = (
-    <div>
-      <label className={labelCls} style={labelStyle}>Notes (optional)</label>
-      <textarea rows={notesFocused ? 4 : 2} placeholder="Any remarks..." className={`${inputCls} resize-none transition-[height]`} style={inputStyle}
+    <div className={rowCls}>
+      <label className={rowLabelCls} style={labelStyle}>Notes (optional)</label>
+      <textarea rows={notesFocused ? 3 : 2} placeholder="Any remarks..." className={`${inputCls} resize-none transition-[height]`} style={inputStyle}
         value={notes} onChange={onText(setNotes)}
         onFocus={() => setNotesFocused(true)} onBlur={() => setNotesFocused(false)} />
     </div>

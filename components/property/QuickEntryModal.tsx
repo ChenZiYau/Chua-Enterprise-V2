@@ -200,7 +200,7 @@ export function QuickEntryModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-entry-modal-title"
-        className="relative w-full max-w-5xl h-[88vh] max-h-[840px] flex flex-col rounded-2xl overflow-hidden"
+        className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl overflow-hidden"
         style={{
           background: "var(--surface)",
           border: "1px solid var(--border-soft)",

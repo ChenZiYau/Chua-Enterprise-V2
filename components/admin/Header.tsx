@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { IconBell, IconSearch } from "./icons";
+import { IconBell, IconSearch, IconLogout } from "./icons";
 import { useMobileNav } from "./MobileNavContext";
+import { signOut } from "@/lib/auth";
 import { useRental } from "@/context/RentalContext";
 import { MONTHS, PAYMENT_STATUS_LABEL } from "@/types/rental";
 import { startOfDay, todayIso } from "@/lib/date";
@@ -68,8 +69,16 @@ export function Header() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [userOpen, setUserOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+  const userRef = useRef<HTMLDivElement>(null);
+
+  async function handleLogout() {
+    await signOut();
+    router.replace("/login");
+    router.refresh();
+  }
 
   // -- Global search results ------------------------------------------
   const results = useMemo<SearchHit[]>(() => {
@@ -255,6 +264,7 @@ export function Header() {
         setNotifOpen(false);
         setExpandedId(null);
       }
+      if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -262,6 +272,7 @@ export function Header() {
         setMobileSearchOpen(false);
         setNotifOpen(false);
         setExpandedId(null);
+        setUserOpen(false);
       }
     }
     window.addEventListener("mousedown", onDown);
@@ -678,6 +689,61 @@ export function Header() {
               </div>
             )}
           </>
+        )}
+      </div>
+
+      {/* Admin user — hover (desktop) or tap (mobile) reveals the logout button */}
+      <div
+        className="relative shrink-0"
+        ref={userRef}
+        onMouseEnter={() => setUserOpen(true)}
+        onMouseLeave={() => setUserOpen(false)}
+      >
+        <button
+          type="button"
+          aria-label="Account"
+          aria-expanded={userOpen}
+          onClick={() => setUserOpen((o) => !o)}
+          className="flex items-center gap-2.5 rounded-full pl-1 pr-1 sm:pr-3 py-1 transition"
+          style={{ background: userOpen ? "var(--surface-muted)" : "transparent" }}
+        >
+          <span
+            className="w-9 h-9 rounded-full shrink-0"
+            style={{
+              background: "linear-gradient(135deg, #4a4f5b 0%, #2a2d34 100%)",
+              border: "2px solid var(--border-soft)",
+            }}
+          />
+          <span className="hidden sm:block text-left leading-tight">
+            <span className="block text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Admin User</span>
+            <span className="block text-[11px]" style={{ color: "var(--text-muted)" }}>admin@chua.co</span>
+          </span>
+        </button>
+
+        {userOpen && (
+          <div
+            className="absolute right-0 top-[calc(100%+8px)] z-50 w-52 rounded-xl border overflow-hidden p-1.5"
+            style={{
+              background: "var(--surface)",
+              borderColor: "var(--border-soft)",
+              boxShadow: "0 16px 40px rgba(15,17,22,0.20)",
+              animation: "notifIn 160ms cubic-bezier(.2,.7,.2,1) both",
+            }}
+          >
+            <div className="sm:hidden px-2.5 py-2">
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Admin User</p>
+              <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>admin@chua.co</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition hover:bg-[var(--surface-muted)]"
+              style={{ color: "var(--danger)" }}
+            >
+              <IconLogout className="w-4 h-4" />
+              Log out
+            </button>
+          </div>
         )}
       </div>
 

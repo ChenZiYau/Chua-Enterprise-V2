@@ -151,10 +151,8 @@ export default function ExpensesPage() {
         </button>
       </div>
 
-      {/* Filters — two rows, matching the Revenue layout: dates + property/room/
-          category on top; search + total on the bottom. */}
-      <div className="ui-card p-4 flex flex-col gap-3">
-        {/* Row 1: date range (left) · property / room / category (right) */}
+      {/* Filters — single row: dates · search · property/room/category · total. */}
+      <div className="ui-card p-4">
         <div className="flex flex-wrap items-center gap-3">
           <DatePickerField
             granularity="day"
@@ -172,6 +170,14 @@ export default function ExpensesPage() {
             onChange={setToDate}
             placeholder="To date"
             ariaLabel="To date"
+          />
+
+          <input
+            type="search"
+            className="ui-input w-auto min-w-[200px] flex-1 max-w-[320px]"
+            placeholder="Search property, category, description..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
 
           <div className="ml-auto flex flex-wrap items-center gap-3">
@@ -214,20 +220,10 @@ export default function ExpensesPage() {
                 ...EXPENSE_CATEGORIES.map((c) => ({ value: c, label: EXPENSE_CATEGORY_LABEL[c] })),
               ]}
             />
-          </div>
-        </div>
 
-        {/* Row 2: search (left) · total (right) */}
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            className="ui-input w-auto min-w-[200px] flex-1 max-w-[360px]"
-            placeholder="Search property, category, description..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div className="ml-auto text-sm font-semibold" style={{ color: "var(--danger)" }}>
-            Total: {fmt(totalExpenses)}
+            <div className="text-sm font-semibold whitespace-nowrap" style={{ color: "var(--danger)" }}>
+              Total: {fmt(totalExpenses)}
+            </div>
           </div>
         </div>
       </div>

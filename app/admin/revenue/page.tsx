@@ -174,10 +174,8 @@ export default function RevenuePage() {
         </button>
       </div>
 
-      {/* Filters — two rows, matching the layout: dates + property/unit/status
-          on top; search + total on the bottom. */}
-      <div className="ui-card p-4 flex flex-col gap-3">
-        {/* Row 1: date range (left) · property / unit / status (right) */}
+      {/* Filters — single row: dates · search · property/unit/status · total. */}
+      <div className="ui-card p-4">
         <div className="flex flex-wrap items-center gap-3">
           <DatePickerField
             granularity="day"
@@ -195,6 +193,14 @@ export default function RevenuePage() {
             onChange={setToDate}
             placeholder="To date"
             ariaLabel="To date"
+          />
+
+          <input
+            type="search"
+            className="ui-input w-auto min-w-[200px] flex-1 max-w-[320px]"
+            placeholder="Search property, unit, tenant, notes..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
 
           <div className="ml-auto flex flex-wrap items-center gap-3">
@@ -241,20 +247,10 @@ export default function RevenuePage() {
                 { value: "overdue", label: "Overdue" },
               ]}
             />
-          </div>
-        </div>
 
-        {/* Row 2: search (left) · total (right) */}
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            className="ui-input w-auto min-w-[200px] flex-1 max-w-[360px]"
-            placeholder="Search property, unit, tenant, notes..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div className="ml-auto text-sm font-semibold" style={{ color: "var(--success)" }}>
-            Total: {fmt(totalRevenue)}
+            <div className="text-sm font-semibold whitespace-nowrap" style={{ color: "var(--success)" }}>
+              Total: {fmt(totalRevenue)}
+            </div>
           </div>
         </div>
       </div>

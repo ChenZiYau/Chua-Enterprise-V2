@@ -222,10 +222,8 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Filters — two rows, matching the Revenue/Expenses layout: dates +
-          property/unit/status on top; search + totals on the bottom. */}
-      <div className="ui-card p-4 flex flex-col gap-3">
-        {/* Row 1: date range (left) · property / unit / status (right) */}
+      {/* Filters — single row: dates · search · property/unit/status · totals. */}
+      <div className="ui-card p-4">
         <div className="flex flex-wrap items-center gap-3">
           <DatePickerField
             granularity="month"
@@ -243,6 +241,14 @@ export default function InvoicesPage() {
             onChange={setToMonth}
             placeholder="To month"
             ariaLabel="To month"
+          />
+
+          <input
+            type="search"
+            className="ui-input w-auto min-w-[200px] flex-1 max-w-[300px]"
+            placeholder="Search invoice #, property, unit, tenant..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
 
           <div className="ml-auto flex flex-wrap items-center gap-3">
@@ -289,25 +295,15 @@ export default function InvoicesPage() {
                 { value: "overdue", label: "Overdue" },
               ]}
             />
-          </div>
-        </div>
 
-        {/* Row 2: search (left) · totals (right) */}
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            className="ui-input w-auto min-w-[200px] flex-1 max-w-[360px]"
-            placeholder="Search invoice #, property, unit, tenant..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div className="ml-auto flex items-center gap-4 text-sm font-semibold">
-            <span style={{ color: "var(--danger)" }}>
-              Outstanding: {fmt(totalOutstanding)}
-            </span>
-            <span style={{ color: "var(--text-primary)" }}>
-              Billed: {fmt(totalBilled)}
-            </span>
+            <div className="flex items-center gap-4 text-sm font-semibold whitespace-nowrap">
+              <span style={{ color: "var(--danger)" }}>
+                Outstanding: {fmt(totalOutstanding)}
+              </span>
+              <span style={{ color: "var(--text-primary)" }}>
+                Billed: {fmt(totalBilled)}
+              </span>
+            </div>
           </div>
         </div>
       </div>

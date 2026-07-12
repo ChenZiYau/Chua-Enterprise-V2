@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { signOut } from "@/lib/auth";
+import { usePathname } from "next/navigation";
 import { useMobileNav } from "./MobileNavContext";
 import {
   IconDashboard,
@@ -16,7 +15,6 @@ import {
   IconMaintenance,
   IconReports,
   IconSettings,
-  IconLogout,
   IconShare,
 } from "./icons";
 
@@ -79,7 +77,6 @@ function isActive(pathname: string | null, href: string) {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { open, setOpen } = useMobileNav();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -97,12 +94,6 @@ export function Sidebar() {
       }
       return next;
     });
-  }
-
-  async function handleLogout() {
-    await signOut();
-    router.replace("/login");
-    router.refresh();
   }
 
   // `mini` collapses labels to an icon-only rail (desktop only).
@@ -172,7 +163,7 @@ export function Sidebar() {
               />
             ) : (
               <p
-                className="px-2.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider"
+                className="px-2.5 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider"
                 style={{ color: "var(--sidebar-text-muted)" }}
               >
                 {section.title}
@@ -203,57 +194,6 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
-
-      <div className="pt-4 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-        <div
-          className={
-            "flex items-center py-1 " + (mini ? "justify-center px-0" : "gap-3 px-1.5")
-          }
-        >
-          <div
-            className="w-9 h-9 rounded-full shrink-0"
-            style={{
-              background: "linear-gradient(135deg, #4a4f5b 0%, #2a2d34 100%)",
-              border: "2px solid rgba(255,255,255,0.08)",
-            }}
-          />
-          {!mini && (
-            <>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-white truncate leading-tight">Admin User</p>
-                <p
-                  className="text-[11px] truncate leading-tight mt-0.5"
-                  style={{ color: "var(--sidebar-text-muted)" }}
-                >
-                  admin@chua.co
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label="Log out"
-                title="Log out"
-                className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition hover:bg-[var(--sidebar-muted)] hover:text-white"
-                style={{ color: "var(--sidebar-text-muted)" }}
-              >
-                <IconLogout className="w-4 h-4" />
-              </button>
-            </>
-          )}
-        </div>
-        {mini && (
-          <button
-            type="button"
-            onClick={handleLogout}
-            aria-label="Log out"
-            title="Log out"
-            className="w-9 h-9 mx-auto mt-1 rounded-md flex items-center justify-center transition hover:bg-[var(--sidebar-muted)] hover:text-white"
-            style={{ color: "var(--sidebar-text-muted)" }}
-          >
-            <IconLogout className="w-4 h-4" />
-          </button>
-        )}
-      </div>
     </>
   );
 
